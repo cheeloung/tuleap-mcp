@@ -73,6 +73,28 @@ async def get_artifact_comments(artifact_id: int) -> str:
 
 
 @mcp.tool()
+async def get_artifact_attachments(
+    artifact_id: int,
+    last_n_changesets: int = None,
+    last_n_files: int = None,
+) -> str:
+    """List files attached to an artifact.
+    last_n_changesets=2 → files from the 2 most recent upload events (one event may include multiple files).
+    last_n_files=2      → the 2 most recently uploaded individual files by timestamp.
+    Both can be combined: last_n_changesets scopes first, then last_n_files trims the result."""
+    client = get_client()
+    return str(await trackers.get_artifact_attachments(client, artifact_id, last_n_changesets, last_n_files))
+
+
+@mcp.tool()
+async def download_artifact_attachment(file_id: int, save_path: str = None) -> str:
+    """Download an attachment by file_id (from get_artifact_attachments) to disk.
+    Returns the local path where the file was saved."""
+    client = get_client()
+    return str(await trackers.download_artifact_attachment(client, file_id, save_path))
+
+
+@mcp.tool()
 async def create_artifact(tracker_id: int, values: list) -> str:
     """Create a new artifact in a tracker. Call get_tracker_fields first to get field_ids and allowed values.
     values example: [{"field_id": 123, "value": "Title"}, {"field_id": 456, "bind_value_ids": [789]}]"""

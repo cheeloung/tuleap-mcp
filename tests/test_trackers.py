@@ -1,6 +1,7 @@
 import json
 import pytest
 from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 from tuleap_mcp.tools.trackers import (
     get_artifact_details,
     search_artifacts,
@@ -10,6 +11,8 @@ from tuleap_mcp.tools.trackers import (
     get_tracker_fields,
     get_artifact_comments,
     get_my_artifacts,
+    get_artifact_attachments,
+    download_artifact_attachment,
 )
 from tuleap_mcp.client import TuleapClient
 
@@ -158,3 +161,111 @@ async def test_get_my_artifacts():
         params={"query": json.dumps({"assigned_to": {"id": 119}})},
     )
     assert result == [{"id": 50, "title": "My Task", "status": "Open"}]
+
+
+def _make_file_changeset(cs_id, submitted_on, file_id, filename):
+    return {
+        "id": cs_id,
+        "submitted_on": submitted_on,
+        "submitted_by_details": {"display_name": "Alice"},
+        "last_comment": {"body": ""},
+        "values": [
+            {
+                "type": "file",
+                "values": [{"id": file_id, "name": filename, "size": 1024, "type": "application/pdf", "description": ""}],
+            }
+        ],
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_artifact_attachments_all():
+    mock_client = AsyncMock(spec=TuleapClient)
+    mock_client.get_paginated.return_value = [
+        _make_file_changeset(1, "2026-01-01T10:00:00+00:00", 10, "a.pdf"),
+        _make_file_changeset(2, "2026-01-02T10:00:00+00:00", 11, "b.pdf"),
+    ]
+
+    result = await get_artifact_attachments(mock_client, artifact_id=100)
+
+    assert len(result) == 2
+    assert result[0]["file_id"] == 11  # sorted newest first
+    assert result[1]["file_id"] == 10
+
+
+@pytest.mark.asyncio
+async def test_get_artifact_attachments_last_n_changesets():
+    mock_client = AsyncMock(spec=TuleapClient)
+    mock_client.get_paginated.return_value = [
+        _make_file_changeset(1, "2026-01-01T10:00:00+00:00", 10, "a.pdf"),
+        _make_file_changeset(2, "2026-01-02T10:00:00+00:00", 11, "b.pdf"),
+        _make_file_changeset(3, "2026-01-03T10:00:00+00:00", 12, "c.pdf"),
+    ]
+
+    result = await get_artifact_attachments(mock_client, artifact_id=100, last_n_changesets=2)
+
+    assert len(result) == 2
+    assert {r["file_id"] for r in result} == {11, 12}
+
+
+@pytest.mark.asyncio
+async def test_get_artifact_attachments_last_n_files():
+    mock_client = AsyncMock(spec=TuleapClient)
+    mock_client.get_paginated.return_value = [
+        _make_file_changeset(1, "2026-01-01T10:00:00+00:00", 10, "a.pdf"),
+        _make_file_changeset(2, "2026-01-02T10:00:00+00:00", 11, "b.pdf"),
+        _make_file_changeset(3, "2026-01-03T10:00:00+00:00", 12, "c.pdf"),
+    ]
+
+    result = await get_artifact_attachments(mock_client, artifact_id=100, last_n_files=2)
+
+    assert len(result) == 2
+    assert result[0]["file_id"] == 12  # newest first
+    assert result[1]["file_id"] == 11
+
+
+@pytest.mark.asyncio
+async def test_get_artifact_attachments_combined():
+    mock_client = AsyncMock(spec=TuleapClient)
+    mock_client.get_paginated.return_value = [
+        _make_file_changeset(1, "2026-01-01T10:00:00+00:00", 10, "a.pdf"),
+        _make_file_changeset(2, "2026-01-02T10:00:00+00:00", 11, "b.pdf"),
+        _make_file_changeset(3, "2026-01-03T10:00:00+00:00", 12, "c.pdf"),
+    ]
+
+    result = await get_artifact_attachments(mock_client, artifact_id=100, last_n_changesets=2, last_n_files=1)
+
+    assert len(result) == 1
+    assert result[0]["file_id"] == 12
+
+
+@pytest.mark.asyncio
+async def test_get_artifact_attachments_dedup():
+    mock_client = AsyncMock(spec=TuleapClient)
+    # Same file_id 10 appears in two changesets
+    mock_client.get_paginated.return_value = [
+        _make_file_changeset(1, "2026-01-01T10:00:00+00:00", 10, "a.pdf"),
+        _make_file_changeset(2, "2026-01-02T10:00:00+00:00", 10, "a.pdf"),
+    ]
+
+    result = await get_artifact_attachments(mock_client, artifact_id=100)
+
+    assert len(result) == 1
+    assert result[0]["file_id"] == 10
+
+
+@pytest.mark.asyncio
+async def test_download_artifact_attachment(tmp_path):
+    mock_client = AsyncMock(spec=TuleapClient)
+    fake_response = MagicMock()
+    fake_response.headers = {"content-disposition": 'attachment; filename="report.pdf"'}
+    fake_response.content = b"%PDF-fake-content"
+    mock_client.download.return_value = fake_response
+
+    save_path = str(tmp_path / "report.pdf")
+    result = await download_artifact_attachment(mock_client, file_id=456, save_path=save_path)
+
+    mock_client.download.assert_called_once_with("artifact_files/456/content")
+    assert result["saved_to"] == save_path
+    assert result["size_bytes"] == len(b"%PDF-fake-content")
+    assert open(save_path, "rb").read() == b"%PDF-fake-content"

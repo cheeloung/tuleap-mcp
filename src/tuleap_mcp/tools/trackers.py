@@ -1,4 +1,5 @@
 import json
+import os
 from typing import List, Dict, Any, Optional
 from ..client import TuleapClient
 
@@ -94,6 +95,71 @@ async def get_my_artifacts(
         params={"query": json.dumps({"assigned_to": {"id": user_id}})},
     )
     return [_slim_artifact(a) for a in results]
+
+
+async def get_artifact_attachments(
+    client: TuleapClient,
+    artifact_id: int,
+    last_n_changesets: Optional[int] = None,
+    last_n_files: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """List files attached to an artifact, with optional scoping filters."""
+    changesets = await client.get_paginated(
+        f"artifacts/{artifact_id}/changesets", params={"fields": "comments"}
+    )
+    file_changesets = [
+        cs for cs in changesets
+        if any(v.get("type") == "file" for v in (cs.get("values") or []))
+    ]
+    if last_n_changesets is not None:
+        file_changesets = file_changesets[-last_n_changesets:]
+
+    seen = set()
+    result = []
+    for cs in file_changesets:
+        for v in cs.get("values") or []:
+            if v.get("type") != "file":
+                continue
+            for f in v.get("values") or []:
+                fid = f.get("id")
+                if fid in seen:
+                    continue
+                seen.add(fid)
+                result.append({
+                    "file_id": fid,
+                    "name": f.get("name"),
+                    "size_bytes": f.get("size"),
+                    "mime_type": f.get("type"),
+                    "description": f.get("description"),
+                    "uploaded_by": cs.get("submitted_by_details", {}).get("display_name"),
+                    "uploaded_on": cs.get("submitted_on"),
+                    "changeset_id": cs.get("id"),
+                })
+
+    result.sort(key=lambda x: x.get("uploaded_on") or "", reverse=True)
+    if last_n_files is not None:
+        result = result[:last_n_files]
+    return result
+
+
+async def download_artifact_attachment(
+    client: TuleapClient,
+    file_id: int,
+    save_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Download a file attachment to disk, returning the local path."""
+    response = await client.download(f"artifact_files/{file_id}/content")
+
+    disposition = response.headers.get("content-disposition", "")
+    filename = f"attachment_{file_id}"
+    if 'filename="' in disposition:
+        filename = disposition.split('filename="')[1].rstrip('"')
+
+    path = save_path or os.path.join(os.getcwd(), filename)
+    with open(path, "wb") as fh:
+        fh.write(response.content)
+
+    return {"saved_to": os.path.abspath(path), "size_bytes": len(response.content)}
 
 
 async def update_artifact(

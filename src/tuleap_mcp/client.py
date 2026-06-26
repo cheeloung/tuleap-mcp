@@ -57,6 +57,13 @@ class TuleapClient:
                     break
         return results
 
+    async def download(self, endpoint: str) -> httpx.Response:
+        url = f"{self.api_url}/{endpoint}"
+        async with httpx.AsyncClient() as client:
+            response = await client.request("GET", url, headers=self.headers)
+            response.raise_for_status()
+            return response
+
     async def post(self, endpoint: str, json: Optional[Dict] = None) -> Any:
         return await self._request("POST", endpoint, json=json)
 
