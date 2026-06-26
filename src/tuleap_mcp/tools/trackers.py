@@ -197,8 +197,9 @@ async def update_artifact(
     artifact_id: int,
     values: List[Dict[str, Any]],
     comment: Optional[str] = None,
+    comment_format: str = "html",
 ) -> Dict[str, Any]:
     payload = {"values": values}
     if comment:
-        payload["comment"] = {"body": comment, "format": "html"}
+        payload["comment"] = {"body": comment, "format": comment_format}
     return await client.put(f"artifacts/{artifact_id}", json=payload)

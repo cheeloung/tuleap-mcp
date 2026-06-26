@@ -113,16 +113,17 @@ async def create_artifact(tracker_id: int, values: list) -> str:
 
 @mcp.tool()
 async def update_artifact(
-    artifact_id: int, values: list = None, comment: str = None
+    artifact_id: int, values: list = None, comment: str = None, comment_format: str = "html"
 ) -> str:
     """Update an artifact's fields or add a comment. At least one of values or comment is required.
+    comment_format: 'html' (default), 'text', or 'commonmark' (Markdown).
     Call get_tracker_fields first to know valid field_ids and bind_value_ids."""
     client = get_client()
     if not values and not comment:
         return "Error: Must provide either values or comment to update."
     if values is None:
         values = []
-    return str(await trackers.update_artifact(client, artifact_id, values, comment))
+    return str(await trackers.update_artifact(client, artifact_id, values, comment, comment_format))
 
 
 @mcp.tool()

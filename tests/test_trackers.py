@@ -77,6 +77,19 @@ async def test_update_artifact():
 
 
 @pytest.mark.asyncio
+async def test_update_artifact_comment_format():
+    client_mock = AsyncMock(spec=TuleapClient)
+    client_mock.put.return_value = None
+
+    await update_artifact(client_mock, 123, [], "**bold**", comment_format="commonmark")
+
+    client_mock.put.assert_called_once_with(
+        "artifacts/123",
+        json={"values": [], "comment": {"body": "**bold**", "format": "commonmark"}},
+    )
+
+
+@pytest.mark.asyncio
 async def test_create_artifact():
     mock_client = AsyncMock(spec=TuleapClient)
     mock_client.post.return_value = {"id": 200, "title": "New Task"}
