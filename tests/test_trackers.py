@@ -172,7 +172,7 @@ def _make_file_changeset(cs_id, submitted_on, file_id, filename):
         "values": [
             {
                 "type": "file",
-                "values": [{"id": file_id, "name": filename, "size": 1024, "type": "application/pdf", "description": ""}],
+                "file_descriptions": [{"id": file_id, "name": filename, "size": 1024, "type": "application/pdf", "description": ""}],
             }
         ],
     }
@@ -258,14 +258,17 @@ async def test_get_artifact_attachments_dedup():
 async def test_download_artifact_attachment(tmp_path):
     mock_client = AsyncMock(spec=TuleapClient)
     fake_response = MagicMock()
-    fake_response.headers = {"content-disposition": 'attachment; filename="report.pdf"'}
+    fake_response.headers = {
+        "content-disposition": 'attachment; filename="report.pdf"',
+        "content-type": "application/pdf",
+    }
     fake_response.content = b"%PDF-fake-content"
     mock_client.download.return_value = fake_response
 
     save_path = str(tmp_path / "report.pdf")
     result = await download_artifact_attachment(mock_client, file_id=456, save_path=save_path)
 
-    mock_client.download.assert_called_once_with("artifact_files/456/content")
+    mock_client.download.assert_called_once_with("artifact_files/456")
     assert result["saved_to"] == save_path
     assert result["size_bytes"] == len(b"%PDF-fake-content")
     assert open(save_path, "rb").read() == b"%PDF-fake-content"

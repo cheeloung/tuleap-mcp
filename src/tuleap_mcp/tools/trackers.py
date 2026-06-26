@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 from typing import List, Dict, Any, Optional
@@ -104,9 +105,7 @@ async def get_artifact_attachments(
     last_n_files: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """List files attached to an artifact, with optional scoping filters."""
-    changesets = await client.get_paginated(
-        f"artifacts/{artifact_id}/changesets", params={"fields": "comments"}
-    )
+    changesets = await client.get_paginated(f"artifacts/{artifact_id}/changesets")
     file_changesets = [
         cs for cs in changesets
         if any(v.get("type") == "file" for v in (cs.get("values") or []))
@@ -120,7 +119,7 @@ async def get_artifact_attachments(
         for v in cs.get("values") or []:
             if v.get("type") != "file":
                 continue
-            for f in v.get("values") or []:
+            for f in v.get("file_descriptions") or v.get("values") or []:
                 fid = f.get("id")
                 if fid in seen:
                     continue
@@ -148,18 +147,24 @@ async def download_artifact_attachment(
     save_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Download a file attachment to disk, returning the local path."""
-    response = await client.download(f"artifact_files/{file_id}/content")
+    response = await client.download(f"artifact_files/{file_id}")
 
     disposition = response.headers.get("content-disposition", "")
     filename = f"attachment_{file_id}"
     if 'filename="' in disposition:
         filename = disposition.split('filename="')[1].rstrip('"')
 
+    content_type = response.headers.get("content-type", "")
+    if "application/json" in content_type:
+        raw = base64.b64decode(response.json()["data"])
+    else:
+        raw = response.content
+
     path = save_path or os.path.join(os.getcwd(), filename)
     with open(path, "wb") as fh:
-        fh.write(response.content)
+        fh.write(raw)
 
-    return {"saved_to": os.path.abspath(path), "size_bytes": len(response.content)}
+    return {"saved_to": os.path.abspath(path), "size_bytes": len(raw)}
 
 
 async def update_artifact(
