@@ -57,6 +57,13 @@ class TuleapClient:
                     break
         return results
 
+    async def download_binary(self, path: str) -> bytes:
+        url = f"{self.base_url}{path}"
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers=self.headers)
+            response.raise_for_status()
+            return response.content
+
     async def download(self, endpoint: str) -> httpx.Response:
         url = f"{self.api_url}/{endpoint}"
         async with httpx.AsyncClient() as client:

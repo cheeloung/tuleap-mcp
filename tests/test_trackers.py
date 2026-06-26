@@ -13,6 +13,7 @@ from tuleap_mcp.tools.trackers import (
     get_my_artifacts,
     get_artifact_attachments,
     download_artifact_attachment,
+    upload_artifact_attachment,
 )
 from tuleap_mcp.client import TuleapClient
 
@@ -172,7 +173,7 @@ def _make_file_changeset(cs_id, submitted_on, file_id, filename):
         "values": [
             {
                 "type": "file",
-                "file_descriptions": [{"id": file_id, "name": filename, "size": 1024, "type": "application/pdf", "description": ""}],
+                "file_descriptions": [{"id": file_id, "name": filename, "size": 1024, "type": "application/pdf", "description": "", "html_url": f"/plugins/tracker/attachments/{file_id}-{filename}"}],
             }
         ],
     }
@@ -191,6 +192,7 @@ async def test_get_artifact_attachments_all():
     assert len(result) == 2
     assert result[0]["file_id"] == 11  # sorted newest first
     assert result[1]["file_id"] == 10
+    assert "html_url" in result[0]
 
 
 @pytest.mark.asyncio
@@ -272,3 +274,47 @@ async def test_download_artifact_attachment(tmp_path):
     assert result["saved_to"] == save_path
     assert result["size_bytes"] == len(b"%PDF-fake-content")
     assert open(save_path, "rb").read() == b"%PDF-fake-content"
+
+
+@pytest.mark.asyncio
+async def test_download_artifact_attachment_direct(tmp_path):
+    mock_client = AsyncMock(spec=TuleapClient)
+    mock_client.download_binary.return_value = b"\x89PNG-binary-data"
+
+    save_path = str(tmp_path / "image.png")
+    result = await download_artifact_attachment(
+        mock_client,
+        file_id=4198,
+        save_path=save_path,
+        html_url="/plugins/tracker/attachments/4198-image.png",
+    )
+
+    mock_client.download_binary.assert_called_once_with("/plugins/tracker/attachments/4198-image.png")
+    mock_client.download.assert_not_called()
+    assert result["size_bytes"] == len(b"\x89PNG-binary-data")
+    assert open(save_path, "rb").read() == b"\x89PNG-binary-data"
+
+
+@pytest.mark.asyncio
+async def test_upload_artifact_attachment(tmp_path):
+    test_file = tmp_path / "report.pdf"
+    test_file.write_bytes(b"%PDF-content")
+
+    mock_client = AsyncMock(spec=TuleapClient)
+    mock_client.post.return_value = {"id": 9999, "name": "report.pdf", "size": 12}
+
+    result = await upload_artifact_attachment(mock_client, str(test_file), description="Q1 report")
+
+    import base64
+    expected_b64 = base64.b64encode(b"%PDF-content").decode()
+    mock_client.post.assert_called_once_with(
+        "artifact_temporary_files",
+        json={
+            "name": "report.pdf",
+            "mimetype": "application/pdf",
+            "content": expected_b64,
+            "offset": 1,
+            "description": "Q1 report",
+        },
+    )
+    assert result == {"file_id": 9999, "name": "report.pdf", "size_bytes": 12}

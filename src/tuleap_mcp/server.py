@@ -87,11 +87,20 @@ async def get_artifact_attachments(
 
 
 @mcp.tool()
-async def download_artifact_attachment(file_id: int, save_path: str = None) -> str:
-    """Download an attachment by file_id (from get_artifact_attachments) to disk.
-    Returns the local path where the file was saved."""
+async def download_artifact_attachment(file_id: int, save_path: str = None, html_url: str = None) -> str:
+    """Download an attachment by file_id to disk. Pass html_url from get_artifact_attachments
+    for direct binary download (avoids base64 overhead). Returns the local path where the file was saved."""
     client = get_client()
-    return str(await trackers.download_artifact_attachment(client, file_id, save_path))
+    return str(await trackers.download_artifact_attachment(client, file_id, save_path, html_url))
+
+
+@mcp.tool()
+async def upload_artifact_attachment(file_path: str, description: str = "") -> str:
+    """Upload a local file as a temporary attachment. Returns file_id to reference in create_artifact
+    or update_artifact values: {"field_id": <file_field_id>, "value": {"id": <file_id>}}.
+    The file is read from disk in Python — the LLM never handles raw bytes."""
+    client = get_client()
+    return str(await trackers.upload_artifact_attachment(client, file_path, description))
 
 
 @mcp.tool()

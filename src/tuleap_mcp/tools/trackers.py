@@ -1,5 +1,6 @@
 import base64
 import json
+import mimetypes
 import os
 from typing import List, Dict, Any, Optional
 from ..client import TuleapClient
@@ -130,6 +131,7 @@ async def get_artifact_attachments(
                     "size_bytes": f.get("size"),
                     "mime_type": f.get("type"),
                     "description": f.get("description"),
+                    "html_url": f.get("html_url"),
                     "uploaded_by": cs.get("submitted_by_details", {}).get("display_name"),
                     "uploaded_on": cs.get("submitted_on"),
                     "changeset_id": cs.get("id"),
@@ -145,26 +147,49 @@ async def download_artifact_attachment(
     client: TuleapClient,
     file_id: int,
     save_path: Optional[str] = None,
+    html_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Download a file attachment to disk, returning the local path."""
-    response = await client.download(f"artifact_files/{file_id}")
-
-    disposition = response.headers.get("content-disposition", "")
-    filename = f"attachment_{file_id}"
-    if 'filename="' in disposition:
-        filename = disposition.split('filename="')[1].rstrip('"')
-
-    content_type = response.headers.get("content-type", "")
-    if "application/json" in content_type:
-        raw = base64.b64decode(response.json()["data"])
+    if html_url:
+        raw = await client.download_binary(html_url)
+        filename = html_url.rsplit("/", 1)[-1]
     else:
-        raw = response.content
+        response = await client.download(f"artifact_files/{file_id}")
+        content_type = response.headers.get("content-type", "")
+        if "application/json" in content_type:
+            raw = base64.b64decode(response.json()["data"])
+        else:
+            raw = response.content
+        disposition = response.headers.get("content-disposition", "")
+        filename = f"attachment_{file_id}"
+        if 'filename="' in disposition:
+            filename = disposition.split('filename="')[1].rstrip('"')
 
     path = save_path or os.path.join(os.getcwd(), filename)
     with open(path, "wb") as fh:
         fh.write(raw)
-
     return {"saved_to": os.path.abspath(path), "size_bytes": len(raw)}
+
+
+async def upload_artifact_attachment(
+    client: TuleapClient,
+    file_path: str,
+    description: str = "",
+) -> Dict[str, Any]:
+    """Upload a local file as a temporary attachment. Returns file_id for use in artifact values."""
+    path = os.path.abspath(file_path)
+    name = os.path.basename(path)
+    mime = mimetypes.guess_type(name)[0] or "application/octet-stream"
+    with open(path, "rb") as fh:
+        content_b64 = base64.b64encode(fh.read()).decode()
+    result = await client.post("artifact_temporary_files", json={
+        "name": name,
+        "mimetype": mime,
+        "content": content_b64,
+        "offset": 1,
+        "description": description,
+    })
+    return {"file_id": result["id"], "name": result["name"], "size_bytes": result["size"]}
 
 
 async def update_artifact(
