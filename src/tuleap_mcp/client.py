@@ -1,5 +1,5 @@
 import httpx
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 
 class TuleapAPIError(Exception):
@@ -17,13 +17,12 @@ class TuleapClient:
         }
 
     async def _request(self, method: str, endpoint: str, **kwargs) -> Any:
-        url = f"{self.api_url}{endpoint}"
+        url = f"{self.api_url}/{endpoint}"
         async with httpx.AsyncClient() as client:
             response = await client.request(method, url, headers=self.headers, **kwargs)
             try:
                 response.raise_for_status()
-                # 204 No Content has no JSON body
-                if response.status_code == 204:
+                if response.status_code == 204 or not response.content:
                     return None
                 return response.json()
             except httpx.HTTPStatusError as e:
@@ -38,6 +37,39 @@ class TuleapClient:
 
     async def get(self, endpoint: str, params: Optional[Dict] = None) -> Any:
         return await self._request("GET", endpoint, params=params)
+
+    async def get_paginated(self, endpoint: str, params: Optional[Dict] = None) -> List[Any]:
+        params = dict(params or {})
+        params.setdefault("limit", 50)
+        params["offset"] = 0
+        results = []
+        async with httpx.AsyncClient() as client:
+            while True:
+                response = await client.request(
+                    "GET", f"{self.api_url}/{endpoint}", headers=self.headers, params=params
+                )
+                response.raise_for_status()
+                data = response.json()
+                results.extend(data if isinstance(data, list) else [data])
+                total = int(response.headers.get("X-Pagination-Size", len(results)))
+                params["offset"] += params["limit"]
+                if params["offset"] >= total:
+                    break
+        return results
+
+    async def download_binary(self, path: str) -> bytes:
+        url = f"{self.base_url}{path}"
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers=self.headers)
+            response.raise_for_status()
+            return response.content
+
+    async def download(self, endpoint: str) -> httpx.Response:
+        url = f"{self.api_url}/{endpoint}"
+        async with httpx.AsyncClient() as client:
+            response = await client.request("GET", url, headers=self.headers)
+            response.raise_for_status()
+            return response
 
     async def post(self, endpoint: str, json: Optional[Dict] = None) -> Any:
         return await self._request("POST", endpoint, json=json)

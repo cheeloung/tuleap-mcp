@@ -10,5 +10,5 @@ async def test_get_git_repositories():
 
     result = await get_git_repositories(mock_client, project_id=1)
 
-    mock_client.get.assert_called_once_with("/projects/1/git")
+    mock_client.get.assert_called_once_with("projects/1/git")
     assert result == [{"id": 10, "name": "backend"}]

@@ -10,5 +10,5 @@ async def test_get_users():
 
     result = await get_users(mock_client, query="jdoe")
 
-    mock_client.get.assert_called_once_with("/users", params={"query": "jdoe"})
+    mock_client.get.assert_called_once_with("users", params={"query": "jdoe"})
     assert result == [{"id": 1, "username": "jdoe"}]
