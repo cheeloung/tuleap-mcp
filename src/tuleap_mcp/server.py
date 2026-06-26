@@ -53,7 +53,7 @@ async def get_tracker_fields(tracker_id: int) -> str:
 @mcp.tool()
 async def search_artifacts(tracker_id: int, filters: dict = None) -> str:
     """Search artifacts in a tracker. Optional filters dict narrows results, e.g.
-    {"assigned_to": {"id": 119}} or {"status": "Open"}. Returns slim payloads (id, title, status, assignees)."""
+    {"assigned_to": {"id": 5}} or {"status": "Open"}. Returns slim payloads (id, title, status, assignees)."""
     client = get_client()
     return str(await trackers.search_artifacts(client, tracker_id, filters))
 

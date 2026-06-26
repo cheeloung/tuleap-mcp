@@ -27,22 +27,22 @@ The file format is:
 ## Projects
 | ID | Name | Shortname |
 |----|------|-----------|
-| 103 | AMAG SCH | amag-sch |
+| 42 | My Project | my-project |
 
 ## Trackers
 | ID | Name | Project |
 |----|------|---------|
-| 67 | 04. Tasks | AMAG CP Testing |
+| 10 | Tasks | My Project |
 
 ## Users
 | ID | Display Name | Username |
 |----|-------------|----------|
-| 119 | Chee Loung Cheah | cheeloung.cheah |
+| 5 | Alice Smith | alice.smith |
 
 ## User Groups
 | ID | Name |
 |----|------|
-| 107 | SwE |
+| 3 | Developers |
 ```
 
 ## Discovery workflow

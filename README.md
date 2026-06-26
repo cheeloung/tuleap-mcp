@@ -113,22 +113,22 @@ The AI keeps a local `tuleap-context.md` in your working directory (not committe
 ## Projects
 | ID | Name | Shortname |
 |----|------|-----------|
-| 103 | AMAG SCH | amag-sch |
+| 42 | My Project | my-project |
 
 ## Trackers
 | ID | Name | Project |
 |----|------|---------|
-| 67 | 04. Tasks | AMAG CP Testing |
+| 10 | Tasks | My Project |
 
 ## Users
 | ID | Display Name | Username |
 |----|-------------|----------|
-| 119 | Chee Loung Cheah | cheeloung.cheah |
+| 5 | Alice Smith | alice.smith |
 
 ## User Groups
 | ID | Name |
 |----|------|
-| 107 | SwE |
+| 3 | Developers |
 ```
 
 ---
@@ -145,7 +145,7 @@ The AI keeps a local `tuleap-context.md` in your working directory (not committe
 ### Artifacts
 | Tool | Description |
 |------|-------------|
-| `search_artifacts(tracker_id, filters?)` | Search artifacts with optional filters e.g. `{"assigned_to": {"id": 119}}` |
+| `search_artifacts(tracker_id, filters?)` | Search artifacts with optional filters e.g. `{"assigned_to": {"id": 5}}` |
 | `get_artifact(artifact_id)` | Get slim details: id, title, status, assigned_to, last_modified_date |
 | `get_artifact_comments(artifact_id)` | Get all comments on an artifact |
 | `create_artifact(tracker_id, values)` | Create a new artifact |

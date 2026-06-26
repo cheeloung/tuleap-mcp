@@ -39,7 +39,7 @@ async def test_search_artifacts_with_filters():
     mock_client.get_paginated.return_value = [
         {"id": 100, "title": "Task A", "values": [{"label": "Status", "value": "Open"}]},
     ]
-    filters = {"assigned_to": {"id": 119}}
+    filters = {"assigned_to": {"id": 5}}
 
     result = await search_artifacts(mock_client, tracker_id=5, filters=filters)
 
@@ -168,11 +168,11 @@ async def test_get_my_artifacts():
         {"id": 50, "title": "My Task", "values": [{"label": "Status", "value": "Open"}]},
     ]
 
-    result = await get_my_artifacts(mock_client, user_id=119, tracker_id=67)
+    result = await get_my_artifacts(mock_client, user_id=5, tracker_id=10)
 
     mock_client.get_paginated.assert_called_once_with(
-        "trackers/67/artifacts",
-        params={"query": json.dumps({"assigned_to": {"id": 119}})},
+        "trackers/10/artifacts",
+        params={"query": json.dumps({"assigned_to": {"id": 5}})},
     )
     assert result == [{"id": 50, "title": "My Task", "status": "Open"}]
 
