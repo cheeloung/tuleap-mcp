@@ -1,9 +1,15 @@
+import json
 import pytest
 from unittest.mock import AsyncMock
 from tuleap_mcp.tools.trackers import (
     get_artifact_details,
     search_artifacts,
     update_artifact,
+    create_artifact,
+    get_project_trackers,
+    get_tracker_fields,
+    get_artifact_comments,
+    get_my_artifacts,
 )
 from tuleap_mcp.client import TuleapClient
 
@@ -11,25 +17,42 @@ from tuleap_mcp.client import TuleapClient
 @pytest.mark.asyncio
 async def test_get_artifact_details():
     mock_client = AsyncMock()
-    mock_client.get.return_value = {"id": 100, "title": "Bug"}
+    mock_client.get.return_value = {
+        "id": 100,
+        "title": "Bug",
+        "values": [{"label": "Status", "value": "Open"}],
+    }
 
     result = await get_artifact_details(mock_client, artifact_id=100)
 
-    mock_client.get.assert_called_once_with("/artifacts/100")
-    assert result == {"id": 100, "title": "Bug"}
+    mock_client.get.assert_called_once_with("artifacts/100")
+    assert result == {"id": 100, "title": "Bug", "status": "Open"}
 
 
 @pytest.mark.asyncio
-async def test_search_artifacts():
+async def test_search_artifacts_with_filters():
     mock_client = AsyncMock()
-    mock_client.get.return_value = [{"id": 100}]
+    mock_client.get_paginated.return_value = [
+        {"id": 100, "title": "Task A", "values": [{"label": "Status", "value": "Open"}]},
+    ]
+    filters = {"assigned_to": {"id": 119}}
 
-    result = await search_artifacts(mock_client, tracker_id=5, query="auth")
+    result = await search_artifacts(mock_client, tracker_id=5, filters=filters)
 
-    mock_client.get.assert_called_once_with(
-        "/artifacts", params={"tracker_id": 5, "query": "auth"}
+    mock_client.get_paginated.assert_called_once_with(
+        "trackers/5/artifacts", params={"query": json.dumps(filters)}
     )
-    assert result == [{"id": 100}]
+    assert result == [{"id": 100, "title": "Task A", "status": "Open"}]
+
+
+@pytest.mark.asyncio
+async def test_search_artifacts_no_filters():
+    mock_client = AsyncMock()
+    mock_client.get_paginated.return_value = []
+
+    await search_artifacts(mock_client, tracker_id=5)
+
+    mock_client.get_paginated.assert_called_once_with("trackers/5/artifacts", params={})
 
 
 @pytest.mark.asyncio
@@ -43,6 +66,95 @@ async def test_update_artifact():
     result = await update_artifact(client_mock, 123, values, comment)
 
     client_mock.put.assert_called_once_with(
-        "/artifacts/123", json={"values": values, "comment": {"body": comment}}
+        "artifacts/123",
+        json={"values": values, "comment": {"body": comment, "format": "html"}},
     )
     assert result == {"id": 123, "status": "updated"}
+
+
+@pytest.mark.asyncio
+async def test_create_artifact():
+    mock_client = AsyncMock(spec=TuleapClient)
+    mock_client.post.return_value = {"id": 200, "title": "New Task"}
+
+    values = [{"field_id": 1, "value": "New Task"}]
+    result = await create_artifact(mock_client, tracker_id=67, values=values)
+
+    mock_client.post.assert_called_once_with(
+        "artifacts", json={"tracker": {"id": 67}, "values": values}
+    )
+    assert result == {"id": 200, "title": "New Task"}
+
+
+@pytest.mark.asyncio
+async def test_get_project_trackers():
+    mock_client = AsyncMock(spec=TuleapClient)
+    mock_client.get.return_value = [{"id": 67, "label": "Tasks"}]
+
+    result = await get_project_trackers(mock_client, project_id=103)
+
+    mock_client.get.assert_called_once_with("projects/103/trackers")
+    assert result == [{"id": 67, "label": "Tasks"}]
+
+
+@pytest.mark.asyncio
+async def test_get_tracker_fields():
+    mock_client = AsyncMock(spec=TuleapClient)
+    mock_client.get.return_value = {
+        "fields": [
+            {"field_id": 1, "label": "Title", "type": "string", "required": True, "values": []},
+            {"field_id": 2, "label": "Status", "type": "sb", "required": False,
+             "values": [{"id": 10, "label": "Open"}, {"id": 11, "label": "Closed"}]},
+        ]
+    }
+
+    result = await get_tracker_fields(mock_client, tracker_id=67)
+
+    mock_client.get.assert_called_once_with("trackers/67")
+    assert result[0] == {"field_id": 1, "label": "Title", "type": "string", "required": True}
+    assert result[1]["values"] == [{"id": 10, "label": "Open"}, {"id": 11, "label": "Closed"}]
+
+
+@pytest.mark.asyncio
+async def test_get_artifact_comments():
+    mock_client = AsyncMock(spec=TuleapClient)
+    mock_client.get_paginated.return_value = [
+        {
+            "submitted_by_details": {"display_name": "Alice"},
+            "submitted_on": "2026-01-01T10:00:00+00:00",
+            "last_comment": {"body": "First comment"},
+        },
+        {
+            "submitted_by_details": {"display_name": "Bob"},
+            "submitted_on": "2026-01-02T10:00:00+00:00",
+            "last_comment": {"body": ""},  # empty — should be skipped
+        },
+    ]
+
+    result = await get_artifact_comments(mock_client, artifact_id=100)
+
+    mock_client.get_paginated.assert_called_once_with(
+        "artifacts/100/changesets", params={"fields": "comments"}
+    )
+    assert len(result) == 1
+    assert result[0] == {
+        "submitted_by": "Alice",
+        "submitted_on": "2026-01-01T10:00:00+00:00",
+        "body": "First comment",
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_my_artifacts():
+    mock_client = AsyncMock(spec=TuleapClient)
+    mock_client.get_paginated.return_value = [
+        {"id": 50, "title": "My Task", "values": [{"label": "Status", "value": "Open"}]},
+    ]
+
+    result = await get_my_artifacts(mock_client, user_id=119, tracker_id=67)
+
+    mock_client.get_paginated.assert_called_once_with(
+        "trackers/67/artifacts",
+        params={"query": json.dumps({"assigned_to": {"id": 119}})},
+    )
+    assert result == [{"id": 50, "title": "My Task", "status": "Open"}]

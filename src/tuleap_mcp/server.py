@@ -22,25 +22,70 @@ def get_client() -> TuleapClient:
 mcp = FastMCP("Tuleap MCP Server")
 
 
+# ── Projects ──────────────────────────────────────────────────────────────────
+
 @mcp.tool()
-async def search_users(query: str = None) -> str:
-    """Search for users in Tuleap."""
+async def search_projects(query: str = None) -> str:
+    """List projects you are a member of. Pass an optional query to filter by shortname."""
     client = get_client()
-    return str(await users.get_users(client, query))
+    return str(await agile.search_projects(client, query))
+
+
+# ── Trackers ──────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+async def get_project_trackers(project_id: int) -> str:
+    """List all trackers (e.g. Tasks, Bugs, Stories) for a project. Returns id, label, shortname."""
+    client = get_client()
+    return str(await trackers.get_project_trackers(client, project_id))
+
+
+@mcp.tool()
+async def get_tracker_fields(tracker_id: int) -> str:
+    """List all fields for a tracker, including field_id, label, type, required flag, and allowed values.
+    Call this before create_artifact or update_artifact to know the correct field_ids and value ids."""
+    client = get_client()
+    return str(await trackers.get_tracker_fields(client, tracker_id))
+
+
+# ── Artifacts ─────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+async def search_artifacts(tracker_id: int, filters: dict = None) -> str:
+    """Search artifacts in a tracker. Optional filters dict narrows results, e.g.
+    {"assigned_to": {"id": 119}} or {"status": "Open"}. Returns slim payloads (id, title, status, assignees)."""
+    client = get_client()
+    return str(await trackers.search_artifacts(client, tracker_id, filters))
 
 
 @mcp.tool()
 async def get_artifact(artifact_id: int) -> str:
-    """Get details of a specific artifact. This includes the fields and values like status, start_date, end_date."""
+    """Get slim details of a specific artifact: id, title, status, assigned_to, last_modified_date, estimated_delivery."""
     client = get_client()
     return str(await trackers.get_artifact_details(client, artifact_id))
+
+
+@mcp.tool()
+async def get_artifact_comments(artifact_id: int) -> str:
+    """Get all comments posted on an artifact, with author and timestamp."""
+    client = get_client()
+    return str(await trackers.get_artifact_comments(client, artifact_id))
+
+
+@mcp.tool()
+async def create_artifact(tracker_id: int, values: list) -> str:
+    """Create a new artifact in a tracker. Call get_tracker_fields first to get field_ids and allowed values.
+    values example: [{"field_id": 123, "value": "Title"}, {"field_id": 456, "bind_value_ids": [789]}]"""
+    client = get_client()
+    return str(await trackers.create_artifact(client, tracker_id, values))
 
 
 @mcp.tool()
 async def update_artifact(
     artifact_id: int, values: list = None, comment: str = None
 ) -> str:
-    """Update an artifact's fields or add a comment. Values should be a list of dictionaries with field updates. At least one of values or comment is required."""
+    """Update an artifact's fields or add a comment. At least one of values or comment is required.
+    Call get_tracker_fields first to know valid field_ids and bind_value_ids."""
     client = get_client()
     if not values and not comment:
         return "Error: Must provide either values or comment to update."
@@ -50,66 +95,81 @@ async def update_artifact(
 
 
 @mcp.tool()
-async def search_artifacts(tracker_id: int, query: str = None) -> str:
-    """Search for artifacts in a specific tracker."""
+async def get_my_artifacts(user_id: int, tracker_id: int) -> str:
+    """Get all artifacts assigned to a specific user in a tracker. Returns slim payloads.
+    Use search_users to find a user_id, get_project_trackers to find a tracker_id."""
     client = get_client()
-    return str(await trackers.search_artifacts(client, tracker_id, query))
+    return str(await trackers.get_my_artifacts(client, user_id, tracker_id))
 
+
+# ── Users ─────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
-async def search_projects(query: str = None) -> str:
-    """Search for projects."""
+async def search_users(query: str = None) -> str:
+    """Search for Tuleap users by name, username, or email. Returns id, display_name, email."""
     client = get_client()
-    return str(await agile.search_projects(client, query))
+    return str(await users.get_users(client, query))
 
+
+# ── Agile ─────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
 async def get_project_epics(project_id: int) -> str:
-    """Get epics for a project. To see details like start/end dates, you might need to use get_artifact on the returned IDs."""
+    """List all epics for a project. Returns id and title. Use get_artifact for full details."""
     client = get_client()
     return str(await agile.get_epics(client, project_id))
 
 
 @mcp.tool()
+async def create_epic(project_id: int, values: list) -> str:
+    """Create a new epic in a project. Call get_tracker_fields on the project's Epic tracker first."""
+    client = get_client()
+    return str(await agile.create_epic(client, project_id, values))
+
+
+@mcp.tool()
 async def get_project_user_stories(project_id: int, epic_id: int = None) -> str:
-    """Get user stories for a project, optionally filtered by an Epic ID."""
+    """List user stories for a project, optionally filtered by parent epic_id."""
     client = get_client()
     return str(await agile.get_user_stories(client, project_id, epic_id))
 
 
 @mcp.tool()
 async def create_user_story(project_id: int, values: list) -> str:
-    """Create a new user story artifact in a project. Values should be a list of dictionaries defining the story fields."""
+    """Create a new user story in a project. Call get_tracker_fields on the User Story tracker first."""
     client = get_client()
     return str(await agile.create_user_story(client, project_id, values))
 
 
 @mcp.tool()
-async def get_git_repos(project_id: int) -> str:
-    """Get git repositories for a project."""
-    client = get_client()
-    return str(await files.get_git_repositories(client, project_id))
-
-
-@mcp.tool()
-async def create_epic(project_id: int, values: list) -> str:
-    """Create a new epic artifact in a project."""
-    client = get_client()
-    return str(await agile.create_epic(client, project_id, values))
-
-
-@mcp.tool()
 async def link_to_epic(epic_id: int, child_artifact_id: int) -> str:
-    """Link a child artifact (e.g. User Story) to a parent epic."""
+    """Link a child artifact (e.g. a User Story) to a parent epic using the _is_child link type."""
     client = get_client()
     return str(await agile.link_to_epic(client, epic_id, child_artifact_id))
 
 
 @mcp.tool()
 async def get_epic_progress(epic_id: int) -> str:
-    """Get summarized progress information for an epic (Status, Progress, Effort)."""
+    """Get summarized progress for an epic: Status, Progress, Remaining Effort, Total Effort."""
     client = get_client()
     return str(await agile.get_epic_progress(client, epic_id))
+
+
+@mcp.tool()
+async def get_project_milestones(project_id: int, status: str = None) -> str:
+    """List milestones (releases/sprints) for a project. Optional status filter: 'open' or 'closed'.
+    Returns id, label, status, start_date, end_date, capacity, remaining_effort."""
+    client = get_client()
+    return str(await agile.get_project_milestones(client, project_id, status))
+
+
+# ── Git ───────────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+async def get_git_repos(project_id: int) -> str:
+    """List git repositories linked to a project."""
+    client = get_client()
+    return str(await files.get_git_repositories(client, project_id))
 
 
 def main():

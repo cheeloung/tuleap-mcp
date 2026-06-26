@@ -11,7 +11,7 @@ async def test_client_get_request():
             return_value=httpx.Response(200, json={"id": 1})
         )
         client = TuleapClient("https://tuleap.example.com", "fake-token")
-        response = await client.get("/users/1")
+        response = await client.get("users/1")
         assert response == {"id": 1}
 
 
@@ -23,5 +23,5 @@ async def test_client_error_handling():
         )
         client = TuleapClient("https://tuleap.example.com", "fake-token")
         with pytest.raises(TuleapAPIError) as exc:
-            await client.get("/notfound")
+            await client.get("notfound")
         assert "404" in str(exc.value)

@@ -14,4 +14,4 @@ async def get_users(
     params = {}
     if query:
         params["query"] = query
-    return await client.get("/users", params=params)
+    return await client.get("users", params=params)
