@@ -177,6 +177,45 @@ async def test_get_my_artifacts():
     assert result == [{"id": 50, "title": "My Task", "status": "Open"}]
 
 
+@pytest.mark.asyncio
+async def test_get_my_artifacts_with_status():
+    mock_client = AsyncMock(spec=TuleapClient)
+    mock_client.get.return_value = {
+        "fields": [{"name": "status", "values": [
+            {"label": "Open", "id": 10},
+            {"label": "Closed", "id": 11},
+        ]}]
+    }
+    mock_client.get_paginated.return_value = [
+        {"id": 50, "title": "My Task", "values": [{"label": "Status", "value": "Open"}]},
+    ]
+
+    result = await get_my_artifacts(mock_client, user_id=5, tracker_id=10, status=["Open"])
+
+    mock_client.get.assert_called_once_with("trackers/10")
+    mock_client.get_paginated.assert_called_once_with(
+        "trackers/10/artifacts",
+        params={"query": json.dumps({"assigned_to": {"id": 5}, "status": [10]})},
+    )
+    assert result == [{"id": 50, "title": "My Task", "status": "Open"}]
+
+
+@pytest.mark.asyncio
+async def test_get_my_artifacts_status_case_insensitive():
+    mock_client = AsyncMock(spec=TuleapClient)
+    mock_client.get.return_value = {
+        "fields": [{"name": "status", "values": [{"label": "Open", "id": 10}]}]
+    }
+    mock_client.get_paginated.return_value = []
+
+    await get_my_artifacts(mock_client, user_id=5, tracker_id=10, status=["open", "OPEN"])
+
+    mock_client.get_paginated.assert_called_once_with(
+        "trackers/10/artifacts",
+        params={"query": json.dumps({"assigned_to": {"id": 5}, "status": [10, 10]})},
+    )
+
+
 def _make_file_changeset(cs_id, submitted_on, file_id, filename):
     return {
         "id": cs_id,

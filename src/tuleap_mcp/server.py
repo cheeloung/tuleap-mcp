@@ -127,11 +127,14 @@ async def update_artifact(
 
 
 @mcp.tool()
-async def get_my_artifacts(user_id: int, tracker_id: int) -> str:
-    """Get all artifacts assigned to a specific user in a tracker. Returns slim payloads.
-    Use search_users to find a user_id, get_project_trackers to find a tracker_id."""
+async def get_my_artifacts(user_id: int, tracker_id: int, status: list = None) -> str:
+    """Get artifacts assigned to a specific user in a tracker. Returns slim payloads.
+    Optional status list filters by label name(s) server-side, e.g.
+    ["To be analysed", "To be solved", "To be tested"] for active tasks.
+    Labels are matched case-insensitively; IDs are resolved automatically.
+    Use search_users to find user_id, get_project_trackers to find tracker_id."""
     client = get_client()
-    return str(await trackers.get_my_artifacts(client, user_id, tracker_id))
+    return str(await trackers.get_my_artifacts(client, user_id, tracker_id, status))
 
 
 # ── Users ─────────────────────────────────────────────────────────────────────

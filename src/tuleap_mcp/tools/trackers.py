@@ -89,12 +89,27 @@ async def get_artifact_comments(
 
 
 async def get_my_artifacts(
-    client: TuleapClient, user_id: int, tracker_id: int
+    client: TuleapClient,
+    user_id: int,
+    tracker_id: int,
+    status: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
-    """Return slim artifacts assigned to a specific user in a tracker."""
+    """Return slim artifacts assigned to a specific user, optionally filtered by status labels."""
+    query: Dict[str, Any] = {"assigned_to": {"id": user_id}}
+    if status:
+        tracker = await client.get(f"trackers/{tracker_id}")
+        status_field = next(
+            (f for f in (tracker.get("fields") or []) if f.get("name") == "status"),
+            None,
+        )
+        if status_field:
+            label_map = {v["label"].lower(): v["id"] for v in (status_field.get("values") or [])}
+            ids = [label_map[s.lower()] for s in status if s.lower() in label_map]
+            if ids:
+                query["status"] = ids
     results = await client.get_paginated(
         f"trackers/{tracker_id}/artifacts",
-        params={"query": json.dumps({"assigned_to": {"id": user_id}})},
+        params={"query": json.dumps(query)},
     )
     return [_slim_artifact(a) for a in results]
 
