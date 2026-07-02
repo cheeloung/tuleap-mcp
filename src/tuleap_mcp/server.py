@@ -53,16 +53,33 @@ async def get_tracker_fields(tracker_id: int) -> str:
 @mcp.tool()
 async def search_artifacts(tracker_id: int, filters: dict = None) -> str:
     """Search artifacts in a tracker. Optional filters dict narrows results, e.g.
-    {"assigned_to": {"id": 5}} or {"status": "Open"}. Returns slim payloads (id, title, status, assignees)."""
+    {"assigned_to": {"id": 5}} or {"status": "Open"}. Returns slim payloads (id, title, status, assignees).
+    If the tracker has a 'Change Request' field, results also include change_request (bool) and
+    change_request_status; use search_change_requests to filter on these directly."""
     client = get_client()
     return str(await trackers.search_artifacts(client, tracker_id, filters))
 
 
 @mcp.tool()
 async def get_artifact(artifact_id: int) -> str:
-    """Get slim details of a specific artifact: id, title, status, assigned_to, last_modified_date, estimated_delivery."""
+    """Get slim details of a specific artifact: id, title, status, assigned_to, last_modified_date, estimated_delivery.
+    If the artifact's tracker has a 'Change Request' field, also includes change_request (bool) and,
+    when set, change_request_status — useful for deciding how to code Replicon timesheet entries."""
     client = get_client()
     return str(await trackers.get_artifact_details(client, artifact_id))
+
+
+@mcp.tool()
+async def search_change_requests(tracker_id: int, status: list = None) -> str:
+    """List artifacts in a tracker flagged as Change Request (via the tracker's
+    'Change Request' checkbox field). Optional status filters by Change Request
+    Status label(s), e.g. ["Accepted"] for approved change requests.
+    Returns {"supported": false, "results": []} if the tracker has no Change
+    Request field at all — distinct from {"supported": true, "results": []}
+    which means the field exists but nothing currently matches.
+    Use for building Replicon timesheet project/task codes from approved change requests."""
+    client = get_client()
+    return str(await trackers.search_change_requests(client, tracker_id, status))
 
 
 @mcp.tool()
