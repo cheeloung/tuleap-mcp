@@ -207,6 +207,40 @@ async def upload_artifact_attachment(
     return {"file_id": result["id"], "name": result["name"], "size_bytes": result["size"]}
 
 
+async def assign_artifact(
+    client: TuleapClient,
+    artifact_id: int,
+    user_id: int,
+) -> Dict[str, Any]:
+    """Assign an artifact to a user, automatically setting the matching User Group."""
+    artifact = await client.get(f"artifacts/{artifact_id}")
+    tracker_id = artifact["tracker"]["id"]
+
+    tracker = await client.get(f"trackers/{tracker_id}")
+    fields = tracker.get("fields") or []
+    assigned_to_field = next((f for f in fields if f.get("name") == "assigned_to"), None)
+    user_group_field = next((f for f in fields if "user_group" in f.get("name", "")), None)
+
+    values = []
+    if assigned_to_field:
+        values.append({"field_id": assigned_to_field["field_id"], "bind_value_ids": [user_id]})
+
+    if user_group_field:
+        matched_ref_id = None
+        for gv in (user_group_field.get("values") or []):
+            ref_id = (gv.get("ugroup_reference") or {}).get("id")
+            if not ref_id:
+                continue
+            members = await client.get_paginated(f"user_groups/{ref_id}/users")
+            if any(m.get("id") == user_id for m in members):
+                matched_ref_id = ref_id
+                break
+        if matched_ref_id:
+            values.append({"field_id": user_group_field["field_id"], "bind_value_ids": [matched_ref_id]})
+
+    return await client.put(f"artifacts/{artifact_id}", json={"values": values})
+
+
 async def update_artifact(
     client: TuleapClient,
     artifact_id: int,

@@ -7,6 +7,7 @@ from tuleap_mcp.tools.trackers import (
     search_artifacts,
     update_artifact,
     create_artifact,
+    assign_artifact,
     get_project_trackers,
     get_tracker_fields,
     get_artifact_comments,
@@ -57,6 +58,39 @@ async def test_search_artifacts_no_filters():
     await search_artifacts(mock_client, tracker_id=5)
 
     mock_client.get_paginated.assert_called_once_with("trackers/5/artifacts", params={})
+
+
+@pytest.mark.asyncio
+async def test_assign_artifact():
+    mock_client = AsyncMock(spec=TuleapClient)
+    # First get: artifact → tracker_id=10
+    # Second get: tracker → fields with assigned_to and user_group
+    mock_client.get.side_effect = [
+        {"tracker": {"id": 10}},
+        {"fields": [
+            {"field_id": 20, "name": "assigned_to", "type": "msb", "values": []},
+            {"field_id": 30, "name": "user_group_1", "type": "sb", "values": [
+                {"ugroup_reference": {"id": "40", "label": "GroupA"}},
+                {"ugroup_reference": {"id": "50", "label": "GroupB"}},
+            ]},
+        ]},
+    ]
+    # get_paginated: first group has no match, second group contains user 5
+    mock_client.get_paginated.side_effect = [
+        [{"id": 99}],        # group 40 — user 5 not here
+        [{"id": 5}, {"id": 6}],  # group 50 — user 5 found
+    ]
+    mock_client.put.return_value = None
+
+    await assign_artifact(mock_client, artifact_id=100, user_id=5)
+
+    mock_client.put.assert_called_once_with(
+        "artifacts/100",
+        json={"values": [
+            {"field_id": 20, "bind_value_ids": [5]},
+            {"field_id": 30, "bind_value_ids": ["50"]},
+        ]},
+    )
 
 
 @pytest.mark.asyncio

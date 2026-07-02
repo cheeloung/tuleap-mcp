@@ -112,6 +112,15 @@ async def create_artifact(tracker_id: int, values: list) -> str:
 
 
 @mcp.tool()
+async def assign_artifact(artifact_id: int, user_id: int) -> str:
+    """Assign an artifact to a user. Automatically resolves the correct User Group
+    to satisfy Tuleap's workflow constraint (Assigned To and User Group must match).
+    Use search_users to find user_id."""
+    client = get_client()
+    return str(await trackers.assign_artifact(client, artifact_id, user_id))
+
+
+@mcp.tool()
 async def update_artifact(
     artifact_id: int, values: list = None, comment: str = None, comment_format: str = "html"
 ) -> str:
