@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 import mimetypes
@@ -5,15 +6,32 @@ import os
 from typing import List, Dict, Any, Optional
 from ..client import TuleapClient
 
-_SLIM_FIELDS = {"status", "assigned_to", "assignees", "last_modified_date", "estimated_delivery"}
+_SLIM_FIELDS = {
+    "status",
+    "assigned_to",
+    "assignees",
+    "last_modified_date",
+    "estimated_delivery",
+    "change_request",
+    "change_request_status",
+}
 
 
 def _slim_artifact(artifact: Dict[str, Any]) -> Dict[str, Any]:
     slim = {"id": artifact.get("id"), "title": artifact.get("title")}
     for f in artifact.get("values") or []:
         name = (f.get("label") or "").lower().replace(" ", "_")
-        if name in _SLIM_FIELDS:
-            slim[name] = f.get("value") or f.get("values")
+        if name not in _SLIM_FIELDS:
+            continue
+        raw = f.get("value") or f.get("values")
+        if f.get("type") == "cb":
+            slim[name] = bool(raw)
+        elif f.get("type") == "sb" and isinstance(raw, list):
+            slim[name] = raw[0].get("label") if raw else None
+        elif f.get("type") == "sb" and isinstance(raw, dict):
+            slim[name] = raw.get("label")
+        else:
+            slim[name] = raw
     return slim
 
 
@@ -32,6 +50,79 @@ async def search_artifacts(
         params["query"] = json.dumps(filters)
     results = await client.get_paginated(f"trackers/{tracker_id}/artifacts", params=params)
     return [_slim_artifact(a) for a in results]
+
+
+async def search_change_requests(
+    client: TuleapClient,
+    tracker_id: int,
+    status: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Return artifacts flagged as Change Request, optionally filtered by
+    Change Request Status label(s). `supported` is False when the tracker has
+    no 'Change Request' field at all (as opposed to zero matches).
+
+    Filters server-side via the tracker's field names/bind-value ids (Tuleap's
+    artifact listing endpoint accepts `{field_name: [value_id, ...]}` in its
+    `query` param) instead of scanning every artifact in the tracker — Tuleap
+    never returns field values from the listing endpoint, so fetching each
+    artifact individually to check its Change Request field doesn't scale for
+    large trackers. If status label(s) are given but none match the tracker's
+    known Change Request Status values (or it has no such field), returns no
+    results rather than silently ignoring the filter."""
+    tracker = await client.get(f"trackers/{tracker_id}")
+    fields = tracker.get("fields") or []
+    cr_field = next((f for f in fields if (f.get("label") or "").lower() == "change request"), None)
+    if not cr_field:
+        return {"supported": False, "results": []}
+
+    cr_value_ids = [str(v["id"]) for v in (cr_field.get("values") or [])]
+    if not cr_value_ids:
+        return {"supported": True, "results": []}
+
+    status_field = next(
+        (f for f in fields if (f.get("label") or "").lower() == "change request status"), None
+    )
+    if status and not status_field:
+        return {"supported": True, "results": []}
+
+    base_filter = {cr_field["name"]: cr_value_ids}
+
+    async def _query(filters: Dict[str, Any], status_label: Optional[str]) -> List[Dict[str, Any]]:
+        stubs = await search_artifacts(client, tracker_id, filters=filters)
+        for s in stubs:
+            s["change_request"] = True
+            if status_field:
+                s["change_request_status"] = status_label
+        return stubs
+
+    if status_field and status:
+        available = {v["label"].lower(): v for v in (status_field.get("values") or [])}
+        targets = [available[s.lower()] for s in status if s.lower() in available]
+        if not targets:
+            return {"supported": True, "results": []}
+        batches = await asyncio.gather(*(
+            _query({**base_filter, status_field["name"]: [str(t["id"])]}, t["label"])
+            for t in targets
+        ))
+        results = [item for batch in batches for item in batch]
+
+    elif status_field:
+        values = status_field.get("values") or []
+        all_flagged, *status_batches = await asyncio.gather(
+            _query(base_filter, None),
+            *(_query({**base_filter, status_field["name"]: [str(v["id"])]}, v["label"]) for v in values),
+        )
+        tagged_ids = {item["id"] for batch in status_batches for item in batch}
+        untagged = [a for a in all_flagged if a["id"] not in tagged_ids]
+        for a in untagged:
+            a["change_request_status"] = None
+        results = untagged + [item for batch in status_batches for item in batch]
+
+    else:
+        results = await _query(base_filter, None)
+
+    results.sort(key=lambda a: a["id"])
+    return {"supported": True, "results": results}
 
 
 async def create_artifact(
