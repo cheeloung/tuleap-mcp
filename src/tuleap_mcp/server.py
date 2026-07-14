@@ -34,10 +34,14 @@ async def search_projects(query: str = None) -> str:
 # ── Trackers ──────────────────────────────────────────────────────────────────
 
 @mcp.tool()
-async def get_project_trackers(project_id: int) -> str:
-    """List all trackers (e.g. Tasks, Bugs, Stories) for a project. Returns id, label, shortname."""
+async def get_project_trackers(project_id: int, full: bool = False) -> str:
+    """List all trackers (e.g. Tasks, Bugs, Stories) for a project. Returns slim entries:
+    id, label, item_name, description, has_change_request_field (bool), and
+    change_request_budget_field (the tracker's approved-budget hours field label, or None).
+    Use this to find which trackers support Change Requests. Pass full=True for the raw
+    Tuleap payload with complete field definitions (very large)."""
     client = get_client()
-    return str(await trackers.get_project_trackers(client, project_id))
+    return str(await trackers.get_project_trackers(client, project_id, full))
 
 
 @mcp.tool()
@@ -55,7 +59,9 @@ async def search_artifacts(tracker_id: int, filters: dict = None) -> str:
     """Search artifacts in a tracker. Optional filters dict narrows results, e.g.
     {"assigned_to": {"id": 5}} or {"status": "Open"}. Returns slim payloads (id, title, status, assignees).
     If the tracker has a 'Change Request' field, results also include change_request (bool) and
-    change_request_status; use search_change_requests to filter on these directly."""
+    change_request_status; use search_change_requests to filter on these directly.
+    If the tracker has an approved-budget field (e.g. "Approved Hours"), results include
+    approved_budget (hours, may be null) and approved_budget_field."""
     client = get_client()
     return str(await trackers.search_artifacts(client, tracker_id, filters))
 
@@ -64,7 +70,9 @@ async def search_artifacts(tracker_id: int, filters: dict = None) -> str:
 async def get_artifact(artifact_id: int) -> str:
     """Get slim details of a specific artifact: id, title, status, assigned_to, last_modified_date, estimated_delivery.
     If the artifact's tracker has a 'Change Request' field, also includes change_request (bool) and,
-    when set, change_request_status — useful for deciding how to code Replicon timesheet entries."""
+    when set, change_request_status — useful for deciding how to code Replicon timesheet entries.
+    If the tracker has an approved-budget field (e.g. "Approved Hours", "CR hours approved"),
+    also includes approved_budget (hours, may be null) and approved_budget_field."""
     client = get_client()
     return str(await trackers.get_artifact_details(client, artifact_id))
 
@@ -77,6 +85,10 @@ async def search_change_requests(tracker_id: int, status: list = None) -> str:
     Returns {"supported": false, "results": []} if the tracker has no Change
     Request field at all — distinct from {"supported": true, "results": []}
     which means the field exists but nothing currently matches.
+    The response's budget_field names the tracker's approved-budget hours field
+    when one exists (labels vary: "Approved Hours", "Accepted effort (h)",
+    "CR hours approved"); each result then carries approved_budget (hours, may
+    be null when not yet filled in).
     Use for building Replicon timesheet project/task codes from approved change requests."""
     client = get_client()
     return str(await trackers.search_change_requests(client, tracker_id, status))

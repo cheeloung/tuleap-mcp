@@ -3,6 +3,8 @@ import pytest
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from tuleap_mcp.tools.trackers import (
+    _find_budget_field,
+    _find_change_request_field,
     get_artifact_details,
     search_artifacts,
     search_change_requests,
@@ -87,6 +89,39 @@ async def test_get_artifact_details_change_request_field_absent():
 
 
 @pytest.mark.asyncio
+async def test_get_artifact_details_approved_budget():
+    mock_client = AsyncMock()
+    mock_client.get.return_value = {
+        "id": 2112,
+        "title": "Modeling of Subcontractors",
+        "values": [
+            {"label": "Status", "value": "Accepted"},
+            {"label": "Approved Hours", "type": "float", "value": 8},
+        ],
+    }
+
+    result = await get_artifact_details(mock_client, artifact_id=2112)
+
+    assert result["approved_budget"] == 8
+    assert result["approved_budget_field"] == "Approved Hours"
+
+
+@pytest.mark.asyncio
+async def test_get_artifact_details_no_budget_field():
+    mock_client = AsyncMock()
+    mock_client.get.return_value = {
+        "id": 100,
+        "title": "Task",
+        "values": [{"label": "Status", "value": "Open"}],
+    }
+
+    result = await get_artifact_details(mock_client, artifact_id=100)
+
+    assert "approved_budget" not in result
+    assert "approved_budget_field" not in result
+
+
+@pytest.mark.asyncio
 async def test_search_artifacts_with_filters():
     mock_client = AsyncMock()
     mock_client.get_paginated.return_value = [
@@ -97,7 +132,7 @@ async def test_search_artifacts_with_filters():
     result = await search_artifacts(mock_client, tracker_id=5, filters=filters)
 
     mock_client.get_paginated.assert_called_once_with(
-        "trackers/5/artifacts", params={"query": json.dumps(filters)}
+        "trackers/5/artifacts", params={"values": "all", "query": json.dumps(filters)}
     )
     assert result == [{"id": 100, "title": "Task A", "status": "Open"}]
 
@@ -109,7 +144,9 @@ async def test_search_artifacts_no_filters():
 
     await search_artifacts(mock_client, tracker_id=5)
 
-    mock_client.get_paginated.assert_called_once_with("trackers/5/artifacts", params={})
+    mock_client.get_paginated.assert_called_once_with(
+        "trackers/5/artifacts", params={"values": "all"}
+    )
 
 
 def _tracker_with_change_request_and_status_field():
@@ -134,33 +171,54 @@ def _tracker_with_change_request_and_status_field():
     }
 
 
+def _tracker_with_budget_field():
+    tracker = _tracker_with_change_request_and_status_field()
+    tracker["fields"].append(
+        {"field_id": 4116, "label": "Approved Hours", "type": "float", "name": "approved_hours"}
+    )
+    return tracker
+
+
+def _cr_value(status_id=None, status_label=None, approved_hours=...):
+    values = [
+        {"label": "Change Request", "type": "cb", "values": [{"id": 1002, "label": "Change Request"}]},
+        {
+            "label": "Change Request Status", "type": "sb",
+            "values": [{"id": status_id, "label": status_label}] if status_id else [],
+        },
+    ]
+    if approved_hours is not ...:
+        values.append({"label": "Approved Hours", "type": "float", "value": approved_hours})
+    return values
+
+
 @pytest.mark.asyncio
 async def test_search_change_requests_full_breakdown():
     mock_client = AsyncMock(spec=TuleapClient)
     mock_client.get.return_value = _tracker_with_change_request_and_status_field()
 
     async def fake_get_paginated(endpoint, params=None):
-        query = json.loads(params["query"])
-        assert query["change_request"] == ["1002"]
-        if "change_request_status" not in query:
-            return [{"id": 1, "title": "CR A"}, {"id": 2, "title": "CR B"}, {"id": 3, "title": "CR C"}]
-        return {
-            "1180": [{"id": 1, "title": "CR A"}],  # Open
-            "1182": [{"id": 2, "title": "CR B"}],  # Accepted
-            "1181": [],  # Rejected
-        }[query["change_request_status"][0]]
+        assert params["values"] == "all"
+        assert json.loads(params["query"]) == {"change_request": ["1002"]}
+        return [
+            {"id": 1, "title": "CR A", "values": _cr_value(1180, "Open")},
+            {"id": 2, "title": "CR B", "values": _cr_value(1182, "Accepted")},
+            {"id": 3, "title": "CR C", "values": _cr_value()},  # flagged, no status set
+        ]
 
     mock_client.get_paginated.side_effect = fake_get_paginated
 
     result = await search_change_requests(mock_client, tracker_id=67)
 
     assert result["supported"] is True
+    assert result["budget_field"] is None
     by_id = {r["id"]: r for r in result["results"]}
     assert set(by_id) == {1, 2, 3}
     assert by_id[1]["change_request_status"] == "Open"
     assert by_id[2]["change_request_status"] == "Accepted"
-    assert by_id[3]["change_request_status"] is None  # flagged, but no status set
+    assert by_id[3]["change_request_status"] is None
     assert all(r["change_request"] is True for r in result["results"])
+    mock_client.get_paginated.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -171,7 +229,7 @@ async def test_search_change_requests_filters_by_status():
     async def fake_get_paginated(endpoint, params=None):
         query = json.loads(params["query"])
         assert query == {"change_request": ["1002"], "change_request_status": ["1182"]}
-        return [{"id": 2, "title": "CR B"}]
+        return [{"id": 2, "title": "CR B", "values": _cr_value(1182, "Accepted")}]
 
     mock_client.get_paginated.side_effect = fake_get_paginated
 
@@ -183,13 +241,55 @@ async def test_search_change_requests_filters_by_status():
 
 
 @pytest.mark.asyncio
+async def test_search_change_requests_multiple_statuses_in_one_query():
+    mock_client = AsyncMock(spec=TuleapClient)
+    mock_client.get.return_value = _tracker_with_change_request_and_status_field()
+
+    async def fake_get_paginated(endpoint, params=None):
+        query = json.loads(params["query"])
+        # multiple bind-value ids are ORed by Tuleap, so one query suffices
+        assert query == {"change_request": ["1002"], "change_request_status": ["1180", "1182"]}
+        return [
+            {"id": 1, "title": "CR A", "values": _cr_value(1180, "Open")},
+            {"id": 2, "title": "CR B", "values": _cr_value(1182, "Accepted")},
+        ]
+
+    mock_client.get_paginated.side_effect = fake_get_paginated
+
+    result = await search_change_requests(mock_client, tracker_id=67, status=["Open", "Accepted"])
+
+    assert [r["id"] for r in result["results"]] == [1, 2]
+    mock_client.get_paginated.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_search_change_requests_includes_approved_budget():
+    mock_client = AsyncMock(spec=TuleapClient)
+    mock_client.get.return_value = _tracker_with_budget_field()
+    mock_client.get_paginated.return_value = [
+        {"id": 7, "title": "CR budgeted", "values": _cr_value(1182, "Accepted", approved_hours=8)},
+        {"id": 8, "title": "CR unbudgeted", "values": _cr_value(1182, "Accepted", approved_hours=None)},
+        {"id": 9, "title": "CR missing field", "values": _cr_value(1182, "Accepted")},
+    ]
+
+    result = await search_change_requests(mock_client, tracker_id=67, status=["Accepted"])
+
+    assert result["budget_field"] == "Approved Hours"
+    by_id = {r["id"]: r for r in result["results"]}
+    assert by_id[7]["approved_budget"] == 8
+    assert by_id[8]["approved_budget"] is None
+    assert by_id[9]["approved_budget"] is None  # backfilled when value absent
+    assert all(r["approved_budget_field"] == "Approved Hours" for r in result["results"])
+
+
+@pytest.mark.asyncio
 async def test_search_change_requests_status_no_match():
     mock_client = AsyncMock(spec=TuleapClient)
     mock_client.get.return_value = _tracker_with_change_request_and_status_field()
 
     result = await search_change_requests(mock_client, tracker_id=67, status=["Nonexistent"])
 
-    assert result == {"supported": True, "results": []}
+    assert result == {"supported": True, "budget_field": None, "results": []}
     mock_client.get_paginated.assert_not_called()
 
 
@@ -210,6 +310,7 @@ async def test_search_change_requests_no_status_field_on_tracker():
 
     assert result == {
         "supported": True,
+        "budget_field": None,
         "results": [{"id": 5, "title": "CR Only", "change_request": True}],
     }
 
@@ -228,7 +329,7 @@ async def test_search_change_requests_status_requested_but_tracker_has_no_status
 
     result = await search_change_requests(mock_client, tracker_id=67, status=["Accepted"])
 
-    assert result == {"supported": True, "results": []}
+    assert result == {"supported": True, "budget_field": None, "results": []}
     mock_client.get_paginated.assert_not_called()
 
 
@@ -243,7 +344,7 @@ async def test_search_change_requests_field_has_no_values():
 
     result = await search_change_requests(mock_client, tracker_id=67)
 
-    assert result == {"supported": True, "results": []}
+    assert result == {"supported": True, "budget_field": None, "results": []}
     mock_client.get_paginated.assert_not_called()
 
 
@@ -259,8 +360,33 @@ async def test_search_change_requests_field_not_supported():
 
     result = await search_change_requests(mock_client, tracker_id=4)
 
-    assert result == {"supported": False, "results": []}
+    assert result == {"supported": False, "budget_field": None, "results": []}
     mock_client.get_paginated.assert_not_called()
+
+
+def test_find_budget_field_label_variants():
+    # the three labels observed in production trackers 67, 62, 85 — plus a generic one
+    for label in ("Approved Hours", "Accepted effort (h)", "CR hours approved", "Remaining budget"):
+        field = _find_budget_field([{"label": label, "type": "float"}])
+        assert field and field["label"] == label
+
+
+def test_find_budget_field_requires_numeric_type():
+    assert _find_budget_field([
+        {"label": "Approved Hours", "type": "column"},   # layout artifact of the form designer
+        {"label": "Approved Hours", "type": "string"},
+        {"label": "Estimate: Analysis - IPC", "type": "computed"},  # numeric but not a budget label
+    ]) is None
+
+
+def test_find_change_request_field_skips_layout_fields():
+    # tracker 85 has both a 'Change Request' fieldset and the real cb field
+    fields = [
+        {"field_id": 3711, "label": "Change Request", "type": "fieldset"},
+        {"field_id": 3710, "label": "Change Request", "type": "cb", "values": [{"id": 1231, "label": "Change Request"}]},
+    ]
+    assert _find_change_request_field(fields)["field_id"] == 3710
+    assert _find_change_request_field([{"label": "Change Request", "type": "fieldset"}]) is None
 
 
 @pytest.mark.asyncio
@@ -341,14 +467,44 @@ async def test_create_artifact():
 
 
 @pytest.mark.asyncio
-async def test_get_project_trackers():
+async def test_get_project_trackers_slim():
     mock_client = AsyncMock(spec=TuleapClient)
-    mock_client.get.return_value = [{"id": 67, "label": "Tasks"}]
+    mock_client.get.return_value = [
+        {
+            "id": 67, "label": "04. Tasks", "item_name": "tasks", "description": "Tasks",
+            "structure": [], "semantics": {},  # bulky keys that must not leak through
+            "fields": [
+                {"label": "Change Request", "type": "cb", "values": [{"id": 1002, "label": "Change Request"}]},
+                {"label": "Approved Hours", "type": "float"},
+            ],
+        },
+        {"id": 19, "label": "Activities", "item_name": "activity", "description": "", "fields": []},
+    ]
 
-    result = await get_project_trackers(mock_client, project_id=103)
+    result = await get_project_trackers(mock_client, project_id=121)
 
-    mock_client.get.assert_called_once_with("projects/103/trackers")
-    assert result == [{"id": 67, "label": "Tasks"}]
+    mock_client.get.assert_called_once_with("projects/121/trackers")
+    assert result == [
+        {
+            "id": 67, "label": "04. Tasks", "item_name": "tasks", "description": "Tasks",
+            "has_change_request_field": True, "change_request_budget_field": "Approved Hours",
+        },
+        {
+            "id": 19, "label": "Activities", "item_name": "activity", "description": "",
+            "has_change_request_field": False, "change_request_budget_field": None,
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_project_trackers_full():
+    mock_client = AsyncMock(spec=TuleapClient)
+    raw = [{"id": 67, "label": "Tasks", "fields": [{"label": "Title", "type": "string"}]}]
+    mock_client.get.return_value = raw
+
+    result = await get_project_trackers(mock_client, project_id=103, full=True)
+
+    assert result == raw
 
 
 @pytest.mark.asyncio
@@ -409,7 +565,7 @@ async def test_get_my_artifacts():
 
     mock_client.get_paginated.assert_called_once_with(
         "trackers/10/artifacts",
-        params={"query": json.dumps({"assigned_to": {"id": 5}})},
+        params={"values": "all", "query": json.dumps({"assigned_to": {"id": 5}})},
     )
     assert result == [{"id": 50, "title": "My Task", "status": "Open"}]
 
@@ -432,7 +588,7 @@ async def test_get_my_artifacts_with_status():
     mock_client.get.assert_called_once_with("trackers/10")
     mock_client.get_paginated.assert_called_once_with(
         "trackers/10/artifacts",
-        params={"query": json.dumps({"assigned_to": {"id": 5}, "status": [10]})},
+        params={"values": "all", "query": json.dumps({"assigned_to": {"id": 5}, "status": [10]})},
     )
     assert result == [{"id": 50, "title": "My Task", "status": "Open"}]
 
@@ -449,7 +605,7 @@ async def test_get_my_artifacts_status_case_insensitive():
 
     mock_client.get_paginated.assert_called_once_with(
         "trackers/10/artifacts",
-        params={"query": json.dumps({"assigned_to": {"id": 5}, "status": [10, 10]})},
+        params={"values": "all", "query": json.dumps({"assigned_to": {"id": 5}, "status": [10, 10]})},
     )
 
 
