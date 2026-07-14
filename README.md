@@ -6,6 +6,8 @@
 
 A secure, fully-tested **Model Context Protocol (MCP)** server for interacting with [Tuleap](https://tuleap.net/). This allows your favorite AI assistants (Claude, OpenCode, Cursor, Gemini, etc.) to safely read and manage your Agile projects, track artifacts, list Git repositories, and query users directly from your IDE or chat interface.
 
+> **Not a developer?** See [docs/getting-started.md](docs/getting-started.md) for a plain-language, step-by-step setup guide (Windows + Claude Desktop).
+
 ---
 
 ## Features
