@@ -89,6 +89,68 @@ async def test_get_artifact_details_change_request_field_absent():
 
 
 @pytest.mark.asyncio
+async def test_get_artifact_details_priority_and_dates():
+    mock_client = AsyncMock()
+    mock_client.get.return_value = {
+        "id": 2112,
+        "title": "Modeling of Subcontractors",
+        "submitted_on": "2025-11-04T09:05:56+01:00",
+        "last_modified_date": "2026-03-17T18:17:30+01:00",
+        "values": [
+            {"label": "Priority", "type": "sb", "values": [{"id": 667, "label": "High"}]},
+        ],
+    }
+
+    result = await get_artifact_details(mock_client, artifact_id=2112)
+
+    assert result["priority"] == "High"
+    assert result["submitted_on"] == "2025-11-04T09:05:56+01:00"
+    assert result["last_modified_date"] == "2026-03-17T18:17:30+01:00"
+
+
+@pytest.mark.asyncio
+async def test_get_artifact_details_dates_omitted_when_absent():
+    mock_client = AsyncMock()
+    mock_client.get.return_value = {
+        "id": 100,
+        "title": "Task",
+        "values": [{"label": "Status", "value": "Open"}],
+    }
+
+    result = await get_artifact_details(mock_client, artifact_id=100)
+
+    assert "submitted_on" not in result
+    assert "last_modified_date" not in result
+    assert "priority" not in result
+
+
+@pytest.mark.asyncio
+async def test_search_artifacts_includes_dates_from_listing():
+    mock_client = AsyncMock()
+    mock_client.get_paginated.return_value = [
+        {
+            "id": 50,
+            "title": "Task",
+            "submitted_on": "2026-01-01T08:00:00+01:00",
+            "last_modified_date": "2026-02-01T08:00:00+01:00",
+            "values": [
+                {"label": "Importance", "type": "sb", "values": [{"id": 1372, "label": "High"}]},
+            ],
+        },
+    ]
+
+    result = await search_artifacts(mock_client, tracker_id=19)
+
+    assert result == [{
+        "id": 50,
+        "title": "Task",
+        "importance": "High",
+        "submitted_on": "2026-01-01T08:00:00+01:00",
+        "last_modified_date": "2026-02-01T08:00:00+01:00",
+    }]
+
+
+@pytest.mark.asyncio
 async def test_get_artifact_details_approved_budget():
     mock_client = AsyncMock()
     mock_client.get.return_value = {

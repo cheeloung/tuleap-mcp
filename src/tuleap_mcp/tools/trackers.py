@@ -10,7 +10,8 @@ _SLIM_FIELDS = {
     "status",
     "assigned_to",
     "assignees",
-    "last_modified_date",
+    "priority",
+    "importance",
     "estimated_delivery",
     "change_request",
     "change_request_status",
@@ -68,6 +69,12 @@ def _slim_artifact(artifact: Dict[str, Any]) -> Dict[str, Any]:
             slim[name] = raw.get("label")
         else:
             slim[name] = raw
+    # submission/modification timestamps live on the artifact itself, not in
+    # its values; both endpoints return them as ISO-8601 strings which sort
+    # lexicographically.
+    for key in ("submitted_on", "last_modified_date"):
+        if artifact.get(key):
+            slim[key] = artifact[key]
     return slim
 
 
