@@ -147,11 +147,12 @@ The AI keeps a local `tuleap-context.md` in your working directory (not committe
 ### Artifacts
 | Tool | Description |
 |------|-------------|
-| `search_artifacts(tracker_id, filters?)` | Search artifacts with optional filters e.g. `{"assigned_to": {"id": 5}}`. Includes change_request/change_request_status when the tracker has that field |
-| `get_artifact(artifact_id)` | Get slim details: id, title, status, assigned_to, last_modified_date, and change_request/change_request_status when present |
+| `search_artifacts(tracker_id, filters?)` | Search artifacts with optional filters e.g. `{"assigned_to": {"id": 5}}`. Includes change_request/change_request_status and technical_details when the tracker has those fields |
+| `get_artifact(artifact_id)` | Get slim details: id, title, status, assigned_to, last_modified_date, technical_details, and change_request/change_request_status when present |
 | `get_artifact_comments(artifact_id)` | Get all comments on an artifact |
 | `create_artifact(tracker_id, values)` | Create a new artifact |
 | `update_artifact(artifact_id, values?, comment?)` | Update fields or add a comment |
+| `update_technical_details(artifact_id, text, text_format?)` | Write text into an artifact's 'Technical Details' field. `text_format` is `commonmark` (default, Markdown), `html`, or `text`. Often restricted to specific user groups, e.g. SwE |
 | `get_my_artifacts(user_id, tracker_id)` | List artifacts assigned to a specific user |
 | `search_change_requests(tracker_id, status?)` | List artifacts flagged as Change Request, optionally filtered by status label(s) e.g. `["Accepted"]` |
 

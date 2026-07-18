@@ -10,10 +10,12 @@ _SLIM_FIELDS = {
     "status",
     "assigned_to",
     "assignees",
-    "last_modified_date",
+    "priority",
+    "importance",
     "estimated_delivery",
     "change_request",
     "change_request_status",
+    "technical_details",
 }
 
 # Budget fields are labelled differently per tracker ("Approved Hours",
@@ -31,6 +33,17 @@ def _find_change_request_field(fields: List[Dict[str, Any]]) -> Optional[Dict[st
         (
             f for f in fields
             if (f.get("label") or "").lower() == "change request"
+            and f.get("type") not in _LAYOUT_FIELD_TYPES
+        ),
+        None,
+    )
+
+
+def _find_technical_details_field(fields: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    return next(
+        (
+            f for f in fields
+            if (f.get("label") or "").lower() == "technical details"
             and f.get("type") not in _LAYOUT_FIELD_TYPES
         ),
         None,
@@ -68,6 +81,12 @@ def _slim_artifact(artifact: Dict[str, Any]) -> Dict[str, Any]:
             slim[name] = raw.get("label")
         else:
             slim[name] = raw
+    # submission/modification timestamps live on the artifact itself, not in
+    # its values; both endpoints return them as ISO-8601 strings which sort
+    # lexicographically.
+    for key in ("submitted_on", "last_modified_date"):
+        if artifact.get(key):
+            slim[key] = artifact[key]
     return slim
 
 
@@ -374,6 +393,38 @@ async def assign_artifact(
             values.append({"field_id": user_group_field["field_id"], "bind_value_ids": [matched_ref_id]})
 
     return await client.put(f"artifacts/{artifact_id}", json={"values": values})
+
+
+async def update_technical_details(
+    client: TuleapClient,
+    artifact_id: int,
+    text: str,
+    text_format: str = "commonmark",
+) -> Dict[str, Any]:
+    """Write text into an artifact's 'Technical Details' field. It's a rich-text
+    field (Tuleap's default for it is 'commonmark', i.e. Markdown) — passing a
+    bare string instead of a {format, content} value would make Tuleap treat it
+    as HTML, so text_format must always be sent explicitly.
+    Tuleap may restrict this field to a specific user group (e.g. SwE) via
+    tracker permissions; callers outside that group will get a Tuleap API
+    error on the PUT, or the field simply won't exist for them."""
+    artifact = await client.get(f"artifacts/{artifact_id}")
+    tracker_id = artifact["tracker"]["id"]
+    tracker = await client.get(f"trackers/{tracker_id}")
+    field = _find_technical_details_field(tracker.get("fields") or [])
+    if not field:
+        raise ValueError(f"Tracker {tracker_id} has no 'Technical Details' field")
+    return await client.put(
+        f"artifacts/{artifact_id}",
+        json={
+            "values": [
+                {
+                    "field_id": field["field_id"],
+                    "value": {"format": text_format, "content": text},
+                }
+            ]
+        },
+    )
 
 
 async def update_artifact(

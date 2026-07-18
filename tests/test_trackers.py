@@ -5,10 +5,12 @@ from unittest.mock import MagicMock
 from tuleap_mcp.tools.trackers import (
     _find_budget_field,
     _find_change_request_field,
+    _find_technical_details_field,
     get_artifact_details,
     search_artifacts,
     search_change_requests,
     update_artifact,
+    update_technical_details,
     create_artifact,
     assign_artifact,
     get_project_trackers,
@@ -86,6 +88,103 @@ async def test_get_artifact_details_change_request_field_absent():
 
     assert "change_request" not in result
     assert "change_request_status" not in result
+
+
+@pytest.mark.asyncio
+async def test_get_artifact_details_priority_and_dates():
+    mock_client = AsyncMock()
+    mock_client.get.return_value = {
+        "id": 2112,
+        "title": "Modeling of Subcontractors",
+        "submitted_on": "2025-11-04T09:05:56+01:00",
+        "last_modified_date": "2026-03-17T18:17:30+01:00",
+        "values": [
+            {"label": "Priority", "type": "sb", "values": [{"id": 667, "label": "High"}]},
+        ],
+    }
+
+    result = await get_artifact_details(mock_client, artifact_id=2112)
+
+    assert result["priority"] == "High"
+    assert result["submitted_on"] == "2025-11-04T09:05:56+01:00"
+    assert result["last_modified_date"] == "2026-03-17T18:17:30+01:00"
+
+
+@pytest.mark.asyncio
+async def test_get_artifact_details_dates_omitted_when_absent():
+    mock_client = AsyncMock()
+    mock_client.get.return_value = {
+        "id": 100,
+        "title": "Task",
+        "values": [{"label": "Status", "value": "Open"}],
+    }
+
+    result = await get_artifact_details(mock_client, artifact_id=100)
+
+    assert "submitted_on" not in result
+    assert "last_modified_date" not in result
+    assert "priority" not in result
+
+
+@pytest.mark.asyncio
+async def test_search_artifacts_includes_dates_from_listing():
+    mock_client = AsyncMock()
+    mock_client.get_paginated.return_value = [
+        {
+            "id": 50,
+            "title": "Task",
+            "submitted_on": "2026-01-01T08:00:00+01:00",
+            "last_modified_date": "2026-02-01T08:00:00+01:00",
+            "values": [
+                {"label": "Importance", "type": "sb", "values": [{"id": 1372, "label": "High"}]},
+            ],
+        },
+    ]
+
+    result = await search_artifacts(mock_client, tracker_id=19)
+
+    assert result == [{
+        "id": 50,
+        "title": "Task",
+        "importance": "High",
+        "submitted_on": "2026-01-01T08:00:00+01:00",
+        "last_modified_date": "2026-02-01T08:00:00+01:00",
+    }]
+
+
+@pytest.mark.asyncio
+async def test_get_artifact_details_technical_details_field():
+    mock_client = AsyncMock()
+    mock_client.get.return_value = {
+        "id": 2112,
+        "title": "Modeling of Subcontractors",
+        "values": [
+            {"label": "Status", "value": "Open"},
+            {"label": "Technical Details", "type": "text", "value": "Uses the batch furnace API"},
+        ],
+    }
+
+    result = await get_artifact_details(mock_client, artifact_id=2112)
+
+    assert result["technical_details"] == "Uses the batch furnace API"
+
+
+@pytest.mark.asyncio
+async def test_search_artifacts_includes_technical_details():
+    mock_client = AsyncMock()
+    mock_client.get_paginated.return_value = [
+        {
+            "id": 50,
+            "title": "Task",
+            "values": [
+                {"label": "Technical Details", "type": "text", "value": "See design doc"},
+            ],
+        },
+    ]
+
+    result = await search_artifacts(mock_client, tracker_id=67)
+
+    assert result == [{"id": 50, "title": "Task", "technical_details": "See design doc"}]
 
 
 @pytest.mark.asyncio
@@ -389,6 +488,17 @@ def test_find_change_request_field_skips_layout_fields():
     assert _find_change_request_field([{"label": "Change Request", "type": "fieldset"}]) is None
 
 
+def test_find_technical_details_field_skips_layout_fields():
+    # tracker 67 (AMAG CP Testing / 04. Tasks) has both a 'Technical Details'
+    # fieldset (4120) and the real text field (4121) sharing the same label
+    fields = [
+        {"field_id": 4120, "label": "Technical Details", "type": "fieldset"},
+        {"field_id": 4121, "label": "Technical Details", "type": "text"},
+    ]
+    assert _find_technical_details_field(fields)["field_id"] == 4121
+    assert _find_technical_details_field([{"label": "Technical Details", "type": "fieldset"}]) is None
+
+
 @pytest.mark.asyncio
 async def test_assign_artifact():
     mock_client = AsyncMock(spec=TuleapClient)
@@ -450,6 +560,70 @@ async def test_update_artifact_comment_format():
         "artifacts/123",
         json={"values": [], "comment": {"body": "**bold**", "format": "commonmark"}},
     )
+
+
+@pytest.mark.asyncio
+async def test_update_technical_details_success():
+    mock_client = AsyncMock(spec=TuleapClient)
+    mock_client.get.side_effect = [
+        {"tracker": {"id": 67}},
+        {"fields": [
+            {"field_id": 4120, "label": "Technical Details", "type": "fieldset"},
+            {"field_id": 4121, "label": "Technical Details", "type": "text"},
+        ]},
+    ]
+    mock_client.put.return_value = {"id": 100, "status": "updated"}
+
+    result = await update_technical_details(mock_client, artifact_id=100, text="Uses batch furnace API")
+
+    mock_client.get.assert_any_call("artifacts/100")
+    mock_client.get.assert_any_call("trackers/67")
+    mock_client.put.assert_called_once_with(
+        "artifacts/100",
+        json={"values": [{
+            "field_id": 4121,
+            "value": {"format": "commonmark", "content": "Uses batch furnace API"},
+        }]},
+    )
+    assert result == {"id": 100, "status": "updated"}
+
+
+@pytest.mark.asyncio
+async def test_update_technical_details_custom_format():
+    mock_client = AsyncMock(spec=TuleapClient)
+    mock_client.get.side_effect = [
+        {"tracker": {"id": 67}},
+        {"fields": [
+            {"field_id": 4121, "label": "Technical Details", "type": "text"},
+        ]},
+    ]
+    mock_client.put.return_value = None
+
+    await update_technical_details(
+        mock_client, artifact_id=100, text="<b>bold</b>", text_format="html"
+    )
+
+    mock_client.put.assert_called_once_with(
+        "artifacts/100",
+        json={"values": [{
+            "field_id": 4121,
+            "value": {"format": "html", "content": "<b>bold</b>"},
+        }]},
+    )
+
+
+@pytest.mark.asyncio
+async def test_update_technical_details_field_missing():
+    mock_client = AsyncMock(spec=TuleapClient)
+    mock_client.get.side_effect = [
+        {"tracker": {"id": 10}},
+        {"fields": [{"field_id": 1, "label": "Title", "type": "string"}]},
+    ]
+
+    with pytest.raises(ValueError):
+        await update_technical_details(mock_client, artifact_id=100, text="anything")
+
+    mock_client.put.assert_not_called()
 
 
 @pytest.mark.asyncio
