@@ -58,14 +58,13 @@ async def get_tracker_fields(tracker_id: int) -> str:
 async def search_artifacts(tracker_id: int, filters: dict = None) -> str:
     """Search artifacts in a tracker. Optional filters dict narrows results, e.g.
     {"assigned_to": {"id": 5}} or {"status": "Open"}. Returns slim payloads (id, title, status,
-    assignees, priority, submitted_on, last_modified_date — the last three allow sorting by
-    urgency or recency).
+    assignees, priority, description, submitted_on, last_modified_date — the last three allow
+    sorting by urgency or recency).
     If the tracker has a 'Change Request' field, results also include change_request (bool) and
     change_request_status; use search_change_requests to filter on these directly.
     If the tracker has an approved-budget field (e.g. "Approved Hours"), results include
     approved_budget (hours, may be null) and approved_budget_field.
-    If the tracker has a 'Technical Details' field, results also include technical_details
-    (text, may be null) — use update_technical_details to set it."""
+    Use get_technical_details for the 'Technical Details' field — not included here."""
     client = get_client()
     return str(await trackers.search_artifacts(client, tracker_id, filters))
 
@@ -73,13 +72,13 @@ async def search_artifacts(tracker_id: int, filters: dict = None) -> str:
 @mcp.tool()
 async def get_artifact(artifact_id: int) -> str:
     """Get slim details of a specific artifact: id, title, status, assigned_to, priority,
-    submitted_on, last_modified_date, estimated_delivery.
+    description, submitted_on, last_modified_date, estimated_delivery.
+    For epics, also includes progress, remaining_effort, total_effort when those fields exist.
     If the artifact's tracker has a 'Change Request' field, also includes change_request (bool) and,
     when set, change_request_status — useful for deciding how to code Replicon timesheet entries.
     If the tracker has an approved-budget field (e.g. "Approved Hours", "CR hours approved"),
     also includes approved_budget (hours, may be null) and approved_budget_field.
-    If the tracker has a 'Technical Details' field, also includes technical_details
-    (text, may be null) — use update_technical_details to set it."""
+    Use get_technical_details for the 'Technical Details' field — not included here."""
     client = get_client()
     return str(await trackers.get_artifact_details(client, artifact_id))
 
@@ -173,6 +172,15 @@ async def update_artifact(
 
 
 @mcp.tool()
+async def get_technical_details(artifact_id: int) -> str:
+    """Get the full content of an artifact's 'Technical Details' field. Kept separate from
+    get_artifact/search_artifacts/get_my_artifacts (which are for high-level summaries and
+    don't include it) since this field's content can be long."""
+    client = get_client()
+    return str(await trackers.get_technical_details(client, artifact_id))
+
+
+@mcp.tool()
 async def update_technical_details(artifact_id: int, text: str, text_format: str = "commonmark") -> str:
     """Write text into an artifact's 'Technical Details' field, if its tracker has one.
     text_format: 'commonmark' (default, Markdown), 'html', or 'text'.
@@ -186,8 +194,8 @@ async def update_technical_details(artifact_id: int, text: str, text_format: str
 @mcp.tool()
 async def get_my_artifacts(user_id: int, tracker_id: int, status: list = None) -> str:
     """Get artifacts assigned to a specific user in a tracker. Returns slim payloads
-    including priority, submitted_on, last_modified_date, and technical_details (when the
-    tracker has that field) so the list can be sorted by urgency or recency.
+    including priority, description, submitted_on, and last_modified_date so the list
+    can be sorted by urgency or recency.
     Optional status list filters by label name(s) server-side, e.g.
     ["To be analysed", "To be solved", "To be tested"] for active tasks.
     Labels are matched case-insensitively; IDs are resolved automatically.
@@ -208,45 +216,10 @@ async def search_users(query: str = None) -> str:
 # ── Agile ─────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
-async def get_project_epics(project_id: int) -> str:
-    """List all epics for a project. Returns id and title. Use get_artifact for full details."""
-    client = get_client()
-    return str(await agile.get_epics(client, project_id))
-
-
-@mcp.tool()
-async def create_epic(project_id: int, values: list) -> str:
-    """Create a new epic in a project. Call get_tracker_fields on the project's Epic tracker first."""
-    client = get_client()
-    return str(await agile.create_epic(client, project_id, values))
-
-
-@mcp.tool()
-async def get_project_user_stories(project_id: int, epic_id: int = None) -> str:
-    """List user stories for a project, optionally filtered by parent epic_id."""
-    client = get_client()
-    return str(await agile.get_user_stories(client, project_id, epic_id))
-
-
-@mcp.tool()
-async def create_user_story(project_id: int, values: list) -> str:
-    """Create a new user story in a project. Call get_tracker_fields on the User Story tracker first."""
-    client = get_client()
-    return str(await agile.create_user_story(client, project_id, values))
-
-
-@mcp.tool()
 async def link_to_epic(epic_id: int, child_artifact_id: int) -> str:
     """Link a child artifact (e.g. a User Story) to a parent epic using the _is_child link type."""
     client = get_client()
     return str(await agile.link_to_epic(client, epic_id, child_artifact_id))
-
-
-@mcp.tool()
-async def get_epic_progress(epic_id: int) -> str:
-    """Get summarized progress for an epic: Status, Progress, Remaining Effort, Total Effort."""
-    client = get_client()
-    return str(await agile.get_epic_progress(client, epic_id))
 
 
 @mcp.tool()

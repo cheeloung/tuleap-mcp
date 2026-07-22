@@ -147,11 +147,12 @@ The AI keeps a local `tuleap-context.md` in your working directory (not committe
 ### Artifacts
 | Tool | Description |
 |------|-------------|
-| `search_artifacts(tracker_id, filters?)` | Search artifacts with optional filters e.g. `{"assigned_to": {"id": 5}}`. Includes change_request/change_request_status and technical_details when the tracker has those fields |
-| `get_artifact(artifact_id)` | Get slim details: id, title, status, assigned_to, last_modified_date, technical_details, and change_request/change_request_status when present |
+| `search_artifacts(tracker_id, filters?)` | Search artifacts with optional filters e.g. `{"assigned_to": {"id": 5}}`. Includes change_request/change_request_status and description when the tracker has those fields |
+| `get_artifact(artifact_id)` | Get slim details: id, title, status, assigned_to, description, last_modified_date, and change_request/change_request_status when present. For epics, also includes progress/remaining_effort/total_effort when present |
 | `get_artifact_comments(artifact_id)` | Get all comments on an artifact |
 | `create_artifact(tracker_id, values)` | Create a new artifact |
 | `update_artifact(artifact_id, values?, comment?)` | Update fields or add a comment |
+| `get_technical_details(artifact_id)` | Get the full content of an artifact's 'Technical Details' field (kept out of the slim summaries above since it can be long) |
 | `update_technical_details(artifact_id, text, text_format?)` | Write text into an artifact's 'Technical Details' field. `text_format` is `commonmark` (default, Markdown), `html`, or `text`. Often restricted to specific user groups, e.g. SwE |
 | `get_my_artifacts(user_id, tracker_id)` | List artifacts assigned to a specific user |
 | `search_change_requests(tracker_id, status?)` | List artifacts flagged as Change Request, optionally filtered by status label(s) e.g. `["Accepted"]` |
@@ -159,11 +160,6 @@ The AI keeps a local `tuleap-context.md` in your working directory (not committe
 ### Agile
 | Tool | Description |
 |------|-------------|
-| `get_project_epics(project_id)` | List epics for a project |
-| `get_epic_progress(epic_id)` | Get Status, Progress, and Effort summary for an epic |
-| `create_epic(project_id, values)` | Create a new epic |
-| `get_project_user_stories(project_id, epic_id?)` | List user stories, optionally filtered by parent epic |
-| `create_user_story(project_id, values)` | Create a new user story |
 | `link_to_epic(epic_id, child_artifact_id)` | Link a child artifact to a parent epic |
 | `get_project_milestones(project_id, status?)` | List milestones (releases/sprints), filter by `open` or `closed` |
 

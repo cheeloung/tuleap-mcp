@@ -16,6 +16,7 @@ from tuleap_mcp.tools.trackers import (
     get_project_trackers,
     get_tracker_fields,
     get_artifact_comments,
+    get_technical_details,
     get_my_artifacts,
     get_artifact_attachments,
     download_artifact_attachment,
@@ -153,7 +154,7 @@ async def test_search_artifacts_includes_dates_from_listing():
 
 
 @pytest.mark.asyncio
-async def test_get_artifact_details_technical_details_field():
+async def test_get_artifact_details_excludes_technical_details_field():
     mock_client = AsyncMock()
     mock_client.get.return_value = {
         "id": 2112,
@@ -166,11 +167,11 @@ async def test_get_artifact_details_technical_details_field():
 
     result = await get_artifact_details(mock_client, artifact_id=2112)
 
-    assert result["technical_details"] == "Uses the batch furnace API"
+    assert "technical_details" not in result
 
 
 @pytest.mark.asyncio
-async def test_search_artifacts_includes_technical_details():
+async def test_search_artifacts_excludes_technical_details():
     mock_client = AsyncMock()
     mock_client.get_paginated.return_value = [
         {
@@ -184,7 +185,76 @@ async def test_search_artifacts_includes_technical_details():
 
     result = await search_artifacts(mock_client, tracker_id=67)
 
-    assert result == [{"id": 50, "title": "Task", "technical_details": "See design doc"}]
+    assert result == [{"id": 50, "title": "Task"}]
+
+
+@pytest.mark.asyncio
+async def test_get_artifact_details_includes_description():
+    mock_client = AsyncMock()
+    mock_client.get.return_value = {
+        "id": 2567,
+        "title": 'New Field "Erfasser"',
+        "values": [
+            {"label": "Status", "value": "Open"},
+            {"label": "Description", "type": "text", "value": "Hi Chee Loung, there is a new field..."},
+        ],
+    }
+
+    result = await get_artifact_details(mock_client, artifact_id=2567)
+
+    assert result["description"] == "Hi Chee Loung, there is a new field..."
+
+
+@pytest.mark.asyncio
+async def test_get_artifact_details_epic_progress_fields():
+    mock_client = AsyncMock()
+    mock_client.get.return_value = {
+        "id": 101,
+        "title": "Big Feature",
+        "values": [
+            {"label": "Status", "value": "Open"},
+            {"label": "Progress", "value": 45},
+            {"label": "Remaining Effort", "value": 10},
+            {"label": "Total Effort", "value": 22},
+        ],
+    }
+
+    result = await get_artifact_details(mock_client, artifact_id=101)
+
+    assert result["status"] == "Open"
+    assert result["progress"] == 45
+    assert result["remaining_effort"] == 10
+    assert result["total_effort"] == 22
+
+
+@pytest.mark.asyncio
+async def test_get_technical_details_field_present():
+    mock_client = AsyncMock(spec=TuleapClient)
+    mock_client.get.return_value = {
+        "id": 2112,
+        "values": [
+            {"label": "Status", "value": "Open"},
+            {"label": "Technical Details", "type": "text", "value": "Uses the batch furnace API"},
+        ],
+    }
+
+    result = await get_technical_details(mock_client, artifact_id=2112)
+
+    mock_client.get.assert_called_once_with("artifacts/2112")
+    assert result == {"id": 2112, "technical_details": "Uses the batch furnace API"}
+
+
+@pytest.mark.asyncio
+async def test_get_technical_details_field_absent():
+    mock_client = AsyncMock(spec=TuleapClient)
+    mock_client.get.return_value = {
+        "id": 100,
+        "values": [{"label": "Status", "value": "Open"}],
+    }
+
+    result = await get_technical_details(mock_client, artifact_id=100)
+
+    assert result == {"id": 100, "technical_details": None}
 
 
 @pytest.mark.asyncio

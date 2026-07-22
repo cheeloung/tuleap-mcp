@@ -15,7 +15,10 @@ _SLIM_FIELDS = {
     "estimated_delivery",
     "change_request",
     "change_request_status",
-    "technical_details",
+    "description",
+    "progress",
+    "remaining_effort",
+    "total_effort",
 }
 
 # Budget fields are labelled differently per tracker ("Approved Hours",
@@ -393,6 +396,19 @@ async def assign_artifact(
             values.append({"field_id": user_group_field["field_id"], "bind_value_ids": [matched_ref_id]})
 
     return await client.put(f"artifacts/{artifact_id}", json={"values": values})
+
+
+async def get_technical_details(
+    client: TuleapClient, artifact_id: int
+) -> Dict[str, Any]:
+    """Return an artifact's 'Technical Details' field on its own — kept out of
+    get_artifact/search_artifacts/get_my_artifacts since those are meant for
+    high-level summaries and the field's content can be long."""
+    data = await client.get(f"artifacts/{artifact_id}")
+    for f in data.get("values") or []:
+        if (f.get("label") or "").lower() == "technical details":
+            return {"id": data.get("id"), "technical_details": f.get("value") or f.get("values")}
+    return {"id": data.get("id"), "technical_details": None}
 
 
 async def update_technical_details(

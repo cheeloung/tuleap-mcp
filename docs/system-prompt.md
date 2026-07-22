@@ -89,8 +89,9 @@ Before writing to Tuleap:
 2. `update_artifact(artifact_id, values=[...])` → apply the change
 
 **"Show me epic progress"**
-1. `get_project_epics(project_id)` → list epics
-2. `get_epic_progress(epic_id)` → summarise Status, Progress, Effort
+1. `get_project_trackers(project_id)` → find the Epic tracker ID
+2. `search_artifacts(tracker_id)` → list epics with status
+3. `get_artifact(epic_id)` → get progress/remaining_effort/total_effort for one epic
 
 **"What's in the current sprint?"**
 1. `get_project_milestones(project_id, status="open")` → find the active milestone
